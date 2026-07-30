@@ -305,14 +305,15 @@ export default function ProfissionaisPage() {
                   />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
-                    formatter={(value: number) => [formatBRL(value), "Faturamento"]}
+                    formatter={(value) => [formatBRL(Number(value)), "Faturamento"]}
                     cursor={{ fill: "#ffffff08" }}
                   />
                   <Bar
                     dataKey="faturamento"
                     radius={[0, 4, 4, 0]}
                     cursor="pointer"
-                    onClick={(entry) => {
+                    onClick={(_entry) => {
+                      const entry = _entry as unknown as { nome: string };
                       const items = agendamentos.filter(
                         (a) => a.profissional === entry.nome
                       );
@@ -320,7 +321,7 @@ export default function ProfissionaisPage() {
                     }}
                     label={{
                       position: "right",
-                      formatter: (v: number) => formatBRLShort(v),
+                      formatter: (v: unknown) => formatBRLShort(Number(v)),
                       fill: "#6b7280",
                       fontSize: 11,
                     }}
@@ -360,8 +361,8 @@ export default function ProfissionaisPage() {
                     />
                     <Tooltip
                       contentStyle={TOOLTIP_STYLE}
-                      formatter={(value: number) => [value, "Atendimentos"]}
-                      labelFormatter={(label: string, payload) => {
+                      formatter={(value) => [Number(value), "Atendimentos"]}
+                      labelFormatter={(label, payload) => {
                         if (payload?.[0]?.payload?.fullName)
                           return payload[0].payload.fullName;
                         return label;
@@ -372,7 +373,8 @@ export default function ProfissionaisPage() {
                       dataKey="atendimentos"
                       radius={[4, 4, 0, 0]}
                       cursor="pointer"
-                      onClick={(entry) => {
+                      onClick={(_entry) => {
+                        const entry = _entry as unknown as { fullName: string };
                         const items = agendamentos.filter(
                           (a) =>
                             a.profissional === entry.fullName &&
@@ -417,8 +419,8 @@ export default function ProfissionaisPage() {
                     />
                     <Tooltip
                       contentStyle={TOOLTIP_STYLE}
-                      formatter={(value: number) => [formatBRL(value), "Faturamento"]}
-                      labelFormatter={(label: string, payload) => {
+                      formatter={(value) => [formatBRL(Number(value)), "Faturamento"]}
+                      labelFormatter={(label, payload) => {
                         if (payload?.[0]?.payload?.fullName)
                           return payload[0].payload.fullName;
                         return label;
@@ -429,7 +431,8 @@ export default function ProfissionaisPage() {
                       dataKey="faturamento"
                       radius={[4, 4, 0, 0]}
                       cursor="pointer"
-                      onClick={(entry) => {
+                      onClick={(_entry) => {
+                        const entry = _entry as unknown as { fullName: string };
                         const items = agendamentos.filter(
                           (a) =>
                             a.profissional === entry.fullName &&
@@ -509,11 +512,11 @@ export default function ProfissionaisPage() {
                           />
                           <Tooltip
                             contentStyle={TOOLTIP_STYLE}
-                            formatter={(value: number, name: string) => {
-                              if (name === "qty") return [value, "Quantidade"];
-                              return [value, name];
+                            formatter={(value, name) => {
+                              if (name === "qty") return [Number(value), "Quantidade"];
+                              return [Number(value), name as string];
                             }}
-                            labelFormatter={(label: string, payload) => {
+                            labelFormatter={(label, payload) => {
                               if (payload?.[0]?.payload?.fullServico)
                                 return payload[0].payload.fullServico;
                               return label;
@@ -530,7 +533,8 @@ export default function ProfissionaisPage() {
                               fill: "#6b7280",
                               fontSize: 11,
                             }}
-                            onClick={(entry) => {
+                            onClick={(_entry) => {
+                              const entry = _entry as unknown as { profNome: string; fullServico: string };
                               const items = agendamentos.filter(
                                 (a) =>
                                   a.profissional === entry.profNome &&

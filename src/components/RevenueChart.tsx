@@ -51,8 +51,8 @@ export default function RevenueChart({
                 borderRadius: "8px",
                 color: "#e5e7eb",
               }}
-              formatter={(value: number) => [
-                `R$ ${value.toFixed(2)}`,
+              formatter={(value) => [
+                `R$ ${Number(value).toFixed(2)}`,
                 "Faturamento",
               ]}
             />

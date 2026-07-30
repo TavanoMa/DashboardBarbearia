@@ -477,10 +477,11 @@ export default function DashboardPage() {
                     fill={CATEGORICAL[0]}
                     radius={[4, 4, 0, 0]}
                     cursor="pointer"
-                    onClick={(data: DailyChartItem) => {
+                    onClick={(_data, _index, e) => {
+                      const d = _data as unknown as DailyChartItem;
                       openModal(
-                        `Dia ${data.dia} - ${formatBRL(data.valor)}`,
-                        <AppointmentList items={data.agendamentos} />
+                        `Dia ${d.dia} - ${formatBRL(d.valor)}`,
+                        <AppointmentList items={d.agendamentos} />
                       );
                     }}
                   />
@@ -601,7 +602,8 @@ export default function DashboardPage() {
                   dot={{ r: 5, fill: CATEGORICAL[0], cursor: "pointer" }}
                   activeDot={{
                     r: 7,
-                    onClick: (_: unknown, payload: { payload: HourlyChartItem }) => {
+                    onClick: (e: unknown) => {
+                      const payload = e as unknown as { payload: HourlyChartItem };
                       const item = payload.payload;
                       openModal(
                         `Horario ${item.hora} - ${formatBRL(item.valor)}`,
@@ -659,7 +661,8 @@ export default function DashboardPage() {
                     fill={CATEGORICAL[2]}
                     radius={[0, 4, 4, 0]}
                     cursor="pointer"
-                    onClick={(data: ProfissionalChartItem) => {
+                    onClick={(_data) => {
+                      const data = _data as unknown as ProfissionalChartItem;
                       openModal(
                         `${data.nome} - ${data.atendimentos} atendimentos`,
                         <AppointmentList items={data.agendamentos} />
@@ -702,8 +705,8 @@ export default function DashboardPage() {
                   />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
-                    formatter={(value: number, name: string) => [
-                      name === "qty" ? `${value}x` : formatBRL(value),
+                    formatter={(value, name) => [
+                      name === "qty" ? `${Number(value)}x` : formatBRL(Number(value)),
                       name === "qty" ? "Quantidade" : "Total",
                     ]}
                     cursor={{ fill: "rgba(255,255,255,0.05)" }}
@@ -713,7 +716,8 @@ export default function DashboardPage() {
                     fill={CATEGORICAL[1]}
                     radius={[0, 4, 4, 0]}
                     cursor="pointer"
-                    onClick={(data: ServicoChartItem) => {
+                    onClick={(_data) => {
+                      const data = _data as unknown as ServicoChartItem;
                       openModal(
                         `${data.servico} (${data.qty}x)`,
                         <AppointmentList items={data.agendamentos} />
@@ -747,7 +751,8 @@ export default function DashboardPage() {
                       nameKey="forma"
                       paddingAngle={2}
                       cursor="pointer"
-                      onClick={(data: PgtoChartItem) => {
+                      onClick={(_data) => {
+                        const data = _data as unknown as PgtoChartItem;
                         openModal(
                           `${data.forma} - ${formatBRL(data.total)}`,
                           <div className="space-y-2">
@@ -773,7 +778,7 @@ export default function DashboardPage() {
                     </Pie>
                     <Tooltip
                       contentStyle={TOOLTIP_STYLE}
-                      formatter={(value: number) => [formatBRL(value), "Total"]}
+                      formatter={(value) => [formatBRL(Number(value)), "Total"]}
                     />
                   </PieChart>
                 </ResponsiveContainer>
