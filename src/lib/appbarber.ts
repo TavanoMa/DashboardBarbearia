@@ -12,6 +12,12 @@ const BASE_URL = "https://sistema.appbarber.com.br";
 const CONFIG_PATH = join(process.cwd(), ".appbarber.json");
 
 function loadConfig(): { phpSessionId: string; appblzId: string } | null {
+  if (process.env.APPBARBER_PHPSESSID) {
+    return {
+      phpSessionId: process.env.APPBARBER_PHPSESSID,
+      appblzId: process.env.APPBARBER_APPBLZID || "",
+    };
+  }
   if (!existsSync(CONFIG_PATH)) return null;
   try {
     return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
