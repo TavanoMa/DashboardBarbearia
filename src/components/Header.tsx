@@ -1,7 +1,8 @@
 "use client";
 
-import { RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, MapPin } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useStore } from "@/hooks/useStore";
 
 interface HeaderProps {
   title?: string;
@@ -9,6 +10,8 @@ interface HeaderProps {
   sessionActive?: boolean;
   lastUpdate?: Date | null;
   loading?: boolean;
+  /** Hide store badge (e.g. on comparison page) */
+  hideStore?: boolean;
 }
 
 export default function Header({
@@ -17,13 +20,23 @@ export default function Header({
   sessionActive,
   lastUpdate,
   loading,
+  hideStore,
 }: HeaderProps) {
   const { dataIni, dataFim, changePeriod, label } = useDateRange();
+  const { currentStoreName, stores } = useStore();
 
   return (
     <header className="border-b border-card-border bg-card-bg shrink-0 px-4 py-3 sm:px-6 sm:h-16 sm:flex sm:items-center sm:justify-between">
       <div className="flex items-center justify-between sm:block">
-        <h1 className="text-lg font-semibold">{title}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold">{title}</h1>
+          {!hideStore && stores.length > 1 && currentStoreName && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full">
+              <MapPin size={10} />
+              {currentStoreName}
+            </span>
+          )}
+        </div>
         <p className="text-xs text-muted hidden sm:block">
           {lastUpdate
             ? `Atualizado ${lastUpdate.toLocaleTimeString("pt-BR")}`

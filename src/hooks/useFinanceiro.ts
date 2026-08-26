@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { FinanceiroResumo, FinanceiroTransacao, FinanceiroGraficoMes, ComandaDetalhe, FormaPagamentoResumo } from "@/lib/types";
 import { useDateRange } from "./useDateRange";
+import { useStore } from "./useStore";
 
 interface DashboardGeral {
   totalBruto: number;
@@ -18,18 +19,26 @@ interface FinanceiroData {
   grafico: FinanceiroGraficoMes[];
 }
 
-export function useFinanceiro() {
+interface UseFinanceiroOptions {
+  overrideStore?: string;
+}
+
+export function useFinanceiro(opts: UseFinanceiroOptions = {}) {
   const { dataIni, dataFim } = useDateRange();
+  const { currentStore } = useStore();
+  const store = opts.overrideStore || currentStore;
+
   const [data, setData] = useState<FinanceiroData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!store) return;
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/financeiro?dataIni=${dataIni}&dataFim=${dataFim}`);
+      const res = await fetch(`/api/financeiro?dataIni=${dataIni}&dataFim=${dataFim}&store=${store}`);
       if (!res.ok) {
         if (res.status === 401) {
           setError("Sessão não configurada");
@@ -44,11 +53,11 @@ export function useFinanceiro() {
     } finally {
       setLoading(false);
     }
-  }, [dataIni, dataFim]);
+  }, [dataIni, dataFim, store]);
 
   useEffect(() => {
     fetchData();
-  }, [dataIni, dataFim]);
+  }, [dataIni, dataFim, store]);
 
   return { data, loading, error, refresh: () => fetchData() };
 }

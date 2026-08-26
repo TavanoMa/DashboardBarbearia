@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useStore } from "./useStore";
 
 export interface ResumoData {
   totalComandaPendentes: number;
@@ -19,17 +20,25 @@ export interface ResumoData {
   totalAssinatura: number;
 }
 
-export function useResumo() {
+interface UseResumoOptions {
+  overrideStore?: string;
+}
+
+export function useResumo(opts: UseResumoOptions = {}) {
+  const { currentStore } = useStore();
+  const store = opts.overrideStore || currentStore;
+
   const [data, setData] = useState<ResumoData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!store) return;
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/resumo");
+      const res = await fetch(`/api/resumo?store=${store}`);
       if (!res.ok) {
         if (res.status === 401) {
           setError("Sessao nao configurada");
@@ -44,11 +53,11 @@ export function useResumo() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [store]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [store]);
 
   return { data, loading, error, refresh: () => fetchData() };
 }

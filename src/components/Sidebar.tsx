@@ -15,8 +15,12 @@ import {
   Package,
   Menu,
   X,
+  GitCompareArrows,
+  MapPin,
+  ChevronDown,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useStore } from "@/hooks/useStore";
 
 const menuItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -26,6 +30,7 @@ const menuItems = [
   { href: "/resumo", label: "Resumo", icon: ClipboardList },
   { href: "/profissionais", label: "Profissionais", icon: Scissors },
   { href: "/clientes", label: "Clientes", icon: Users },
+  { href: "/comparativo", label: "Comparar Lojas", icon: GitCompareArrows },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
@@ -33,6 +38,9 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { stores, currentStore, currentStoreName, setCurrentStore } = useStore();
 
   useEffect(() => {
     setMobileOpen(false);
@@ -44,6 +52,23 @@ export default function Sidebar() {
       return () => { document.body.style.overflow = ""; };
     }
   }, [mobileOpen]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setStoreDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const shortStoreName = currentStoreName
+    ? currentStoreName.length > 16
+      ? currentStoreName.slice(0, 14) + "…"
+      : currentStoreName
+    : "";
 
   return (
     <>
@@ -67,7 +92,9 @@ export default function Sidebar() {
             }}
           />
         </div>
-        <span className="font-semibold text-sm">DashBoard Cacique&apos;s</span>
+        <span className="font-semibold text-sm flex-1 truncate">
+          {shortStoreName || "DashBoard Cacique's"}
+        </span>
       </div>
 
       {/* Mobile overlay */}
@@ -117,6 +144,46 @@ export default function Sidebar() {
             <X size={20} />
           </button>
         </div>
+
+        {/* Store Selector */}
+        {stores.length > 1 && !collapsed && (
+          <div className="px-3 py-3 border-b border-white/10" ref={dropdownRef}>
+            <button
+              onClick={() => setStoreDropdownOpen(!storeDropdownOpen)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left"
+            >
+              <MapPin size={14} className="text-accent shrink-0" />
+              <span className="text-xs text-white truncate flex-1">
+                {shortStoreName}
+              </span>
+              <ChevronDown
+                size={14}
+                className={`text-sidebar-text/50 transition-transform ${storeDropdownOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {storeDropdownOpen && (
+              <div className="mt-1 bg-sidebar-bg border border-white/10 rounded-lg overflow-hidden shadow-xl">
+                {stores.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      setCurrentStore(s.id);
+                      setStoreDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 ${
+                      s.id === currentStore
+                        ? "bg-accent/20 text-accent"
+                        : "text-sidebar-text/70 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    <MapPin size={12} className="shrink-0" />
+                    <span className="truncate">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <nav className="flex-1 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {

@@ -1,5 +1,3 @@
-import { readFileSync, existsSync } from "fs";
-import { join } from "path";
 import type {
   AgendamentoRaw,
   AppBarberResponse,
@@ -7,32 +5,53 @@ import type {
   ComissaoSinteticoRaw,
   FinanceiroGraficoMes,
 } from "./types";
+import { getActiveSessionsSync, type StoreSessions } from "./appbarber-auth";
 
 const BASE_URL = "https://sistema.appbarber.com.br";
-const CONFIG_PATH = join(process.cwd(), ".appbarber.json");
 
-function loadConfig(): { phpSessionId: string; appblzId: string } | null {
-  if (process.env.APPBARBER_PHPSESSID) {
-    return {
-      phpSessionId: process.env.APPBARBER_PHPSESSID,
-      appblzId: process.env.APPBARBER_APPBLZID || "",
-    };
-  }
-  if (!existsSync(CONFIG_PATH)) return null;
-  try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return null;
-  }
+// ---------------------------------------------------------------------------
+// Multi-store config — now powered by appbarber-auth session manager
+// ---------------------------------------------------------------------------
+
+export interface StoreConfig {
+  id: string;
+  name: string;
+  phpSessionId: string;
+  appblzId: string;
 }
 
-function getCookies(): string {
-  const config = loadConfig();
+function loadAllStores(): StoreConfig[] {
+  const sessions = getActiveSessionsSync();
+  return sessions.map((s: StoreSessions) => ({
+    id: s.id,
+    name: s.name,
+    phpSessionId: s.phpSessionId,
+    appblzId: s.appblzId,
+  }));
+}
+
+function getStoreConfig(storeId?: string): StoreConfig | null {
+  const stores = loadAllStores();
+  if (stores.length === 0) return null;
+  if (!storeId) return stores[0];
+  return stores.find((s) => s.id === storeId) || stores[0];
+}
+
+export function getStores(): StoreConfig[] {
+  return loadAllStores();
+}
+
+function getCookies(storeId?: string): string {
+  const config = getStoreConfig(storeId);
   if (!config?.phpSessionId) return "";
   let cookie = `PHPSESSID=${config.phpSessionId}`;
   if (config.appblzId) cookie += `; APPBLZ_ID=${config.appblzId}`;
   return cookie;
 }
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
 
 const defaultHeaders: Record<string, string> = {
   accept: "application/json, text/javascript, */*; q=0.01",
@@ -50,8 +69,8 @@ function formatDate(date: Date): string {
   return `${d}/${m}/${y}`;
 }
 
-async function postEndpoint(path: string, body: URLSearchParams): Promise<unknown> {
-  const cookie = getCookies();
+async function postEndpoint(path: string, body: URLSearchParams, storeId?: string): Promise<unknown> {
+  const cookie = getCookies(storeId);
   if (!cookie) return null;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -64,8 +83,8 @@ async function postEndpoint(path: string, body: URLSearchParams): Promise<unknow
   return res.json();
 }
 
-async function getEndpoint(path: string): Promise<unknown> {
-  const cookie = getCookies();
+async function getEndpoint(path: string, storeId?: string): Promise<unknown> {
+  const cookie = getCookies(storeId);
   if (!cookie) return null;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -87,7 +106,8 @@ export async function buscarAgendamentosRaw(
     cliente?: string;
     profissional?: string;
     servico?: string;
-  }
+  },
+  storeId?: string
 ): Promise<AgendamentoRaw[]> {
   const body = new URLSearchParams({
     edtDataIni: formatDate(dataIni),
@@ -99,7 +119,7 @@ export async function buscarAgendamentosRaw(
   });
 
   try {
-    const data = await postEndpoint("/pages/relatorios/buscaAgendamentos.php", body) as AppBarberResponse | AgendamentoRaw[] | null;
+    const data = await postEndpoint("/pages/relatorios/buscaAgendamentos.php", body, storeId) as AppBarberResponse | AgendamentoRaw[] | null;
     if (!data) return [];
     if ("data" in data && Array.isArray(data.data)) return data.data;
     if (Array.isArray(data)) return data;
@@ -119,7 +139,8 @@ export async function buscarFinanceiroResumo(
   dataIni: Date,
   dataFim: Date,
   tipo: number = 1,
-  filtros?: { profissional?: string; servico?: string; pagamento?: string; categoria?: string }
+  filtros?: { profissional?: string; servico?: string; pagamento?: string; categoria?: string },
+  storeId?: string
 ): Promise<Record<string, string>[]> {
   const body = new URLSearchParams({
     dataIni: formatDate(dataIni),
@@ -133,7 +154,7 @@ export async function buscarFinanceiroResumo(
   });
 
   try {
-    const data = await postEndpoint("/pages/relatorios/buscarelGerencialFinanceirov2.php", body) as FinanceiroRawResponse | null;
+    const data = await postEndpoint("/pages/relatorios/buscarelGerencialFinanceirov2.php", body, storeId) as FinanceiroRawResponse | null;
     if (!data) return [];
     if (Array.isArray(data.data)) return data.data;
     return [];
@@ -144,7 +165,8 @@ export async function buscarFinanceiroResumo(
 
 export async function buscarFinanceiroGrafico(
   dataIni: Date,
-  dataFim: Date
+  dataFim: Date,
+  storeId?: string
 ): Promise<{ data: FinanceiroGraficoMes[]; data2: FinanceiroGraficoMes[] }> {
   const body = new URLSearchParams({
     dataIni: formatDate(dataIni),
@@ -157,7 +179,7 @@ export async function buscarFinanceiroGrafico(
   });
 
   try {
-    const raw = await postEndpoint("/pages/relatorios/buscaGraficoRelGerencialFinanceirov2.php", body) as { data: unknown[]; data2: unknown[] } | null;
+    const raw = await postEndpoint("/pages/relatorios/buscaGraficoRelGerencialFinanceirov2.php", body, storeId) as { data: unknown[]; data2: unknown[] } | null;
     if (!raw) return { data: [], data2: [] };
 
     const parse = (items: unknown[]): FinanceiroGraficoMes[] =>
@@ -190,7 +212,8 @@ interface ComissaoResponse {
 export async function buscarComissoes(
   dataIni: Date,
   dataFim: Date,
-  filtros?: { profissional?: string; servico?: string }
+  filtros?: { profissional?: string; servico?: string },
+  storeId?: string
 ): Promise<ComissaoDetalheRaw[]> {
   const body = new URLSearchParams({
     dataIni: formatDate(dataIni),
@@ -200,7 +223,7 @@ export async function buscarComissoes(
   });
 
   try {
-    const data = await postEndpoint("/pages/relatorios/buscaComissoesProfissionaisv2.php", body) as ComissaoResponse | null;
+    const data = await postEndpoint("/pages/relatorios/buscaComissoesProfissionaisv2.php", body, storeId) as ComissaoResponse | null;
     if (!data) return [];
     if (Array.isArray(data.data)) return data.data;
     return [];
@@ -216,7 +239,8 @@ interface ComissaoSinteticoResponse {
 export async function buscarComissoesSintetico(
   dataIni: Date,
   dataFim: Date,
-  filtros?: { profissional?: string; servico?: string }
+  filtros?: { profissional?: string; servico?: string },
+  storeId?: string
 ): Promise<ComissaoSinteticoRaw[]> {
   const body = new URLSearchParams({
     dataIni: formatDate(dataIni),
@@ -226,7 +250,7 @@ export async function buscarComissoesSintetico(
   });
 
   try {
-    const data = await postEndpoint("/pages/relatorios/buscaComissoesProfissionaisTotalSinteticov2.php", body) as ComissaoSinteticoResponse | null;
+    const data = await postEndpoint("/pages/relatorios/buscaComissoesProfissionaisTotalSinteticov2.php", body, storeId) as ComissaoSinteticoResponse | null;
     if (!data) return [];
     if (Array.isArray(data.data)) return data.data;
     return [];
@@ -240,7 +264,8 @@ export async function buscarComissoesSintetico(
 export async function buscarFluxoCaixa(
   dataIni: Date,
   dataFim: Date,
-  tipo: number = 4
+  tipo: number = 4,
+  storeId?: string
 ): Promise<Record<string, string>[]> {
   const body = new URLSearchParams({
     dataIni: formatDate(dataIni),
@@ -254,7 +279,7 @@ export async function buscarFluxoCaixa(
   });
 
   try {
-    const data = await postEndpoint("/pages/relatorios/buscaRelGerencialFluxoCaixa.php", body) as FinanceiroRawResponse | null;
+    const data = await postEndpoint("/pages/relatorios/buscaRelGerencialFluxoCaixa.php", body, storeId) as FinanceiroRawResponse | null;
     if (!data) return [];
     if (Array.isArray(data.data)) return data.data;
     return [];
@@ -266,11 +291,11 @@ export async function buscarFluxoCaixa(
 
 // --- Resumo Dashboard ---
 
-export async function buscarResumoDashboard(): Promise<Record<string, string>[]> {
+export async function buscarResumoDashboard(storeId?: string): Promise<Record<string, string>[]> {
   const body = new URLSearchParams({});
 
   try {
-    const data = await postEndpoint("/pages/relatorios/buscaRelDashboard.php", body) as { data: Record<string, string>[] } | null;
+    const data = await postEndpoint("/pages/relatorios/buscaRelDashboard.php", body, storeId) as { data: Record<string, string>[] } | null;
     if (!data) return [];
     if (Array.isArray(data.data)) return data.data;
     return [];
@@ -282,9 +307,9 @@ export async function buscarResumoDashboard(): Promise<Record<string, string>[]>
 
 // --- Estoque ---
 
-export async function buscarProdutos(): Promise<Record<string, string>[]> {
+export async function buscarProdutos(storeId?: string): Promise<Record<string, string>[]> {
   try {
-    const data = await getEndpoint("/pages/cadastros/buscaProdutos.php") as AppBarberResponse | null;
+    const data = await getEndpoint("/pages/cadastros/buscaProdutos.php", storeId) as AppBarberResponse | null;
     if (!data) return [];
     if (Array.isArray(data.data)) return data.data as unknown as Record<string, string>[];
     return [];
@@ -293,8 +318,8 @@ export async function buscarProdutos(): Promise<Record<string, string>[]> {
   }
 }
 
-export function isSessionConfigured(): boolean {
-  const config = loadConfig();
+export function isSessionConfigured(storeId?: string): boolean {
+  const config = getStoreConfig(storeId);
   return !!config?.phpSessionId;
 }
 

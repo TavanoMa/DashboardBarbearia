@@ -37,6 +37,7 @@ import {
 } from "@/components/charts/ChartColors";
 import { useAgendamentos } from "@/hooks/useAgendamentos";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useStore } from "@/hooks/useStore";
 import { agruparPorProfissional } from "@/lib/parser";
 import type { Agendamento } from "@/lib/types";
 
@@ -111,6 +112,7 @@ export default function ProfissionaisPage() {
   const { agendamentos, loading, sessionActive, lastUpdate, refresh } =
     useAgendamentos({ autoRefreshMs: 0 });
   const { dataIni, dataFim } = useDateRange();
+  const { currentStore } = useStore();
 
   const [tab, setTab] = useState<Tab>("cadastro");
   const [modalOpen, setModalOpen] = useState(false);
@@ -137,7 +139,7 @@ export default function ProfissionaisPage() {
     setPrevLoading(true);
     try {
       const res = await fetch(
-        `/api/agendamentos?dataIni=${prevPeriod.dataIni}&dataFim=${prevPeriod.dataFim}`
+        `/api/agendamentos?dataIni=${prevPeriod.dataIni}&dataFim=${prevPeriod.dataFim}&store=${currentStore}`
       );
       if (res.ok) {
         const data: Agendamento[] = await res.json();
@@ -148,7 +150,7 @@ export default function ProfissionaisPage() {
     } finally {
       setPrevLoading(false);
     }
-  }, [prevPeriod.dataIni, prevPeriod.dataFim]);
+  }, [prevPeriod.dataIni, prevPeriod.dataFim, currentStore]);
 
   useEffect(() => {
     if (tab === "comparativo") fetchPrev();

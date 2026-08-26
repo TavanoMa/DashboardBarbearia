@@ -3,11 +3,13 @@ import { buscarComissoes, buscarComissoesSintetico, isSessionConfigured } from "
 import { parseComissoes, parseComissoesSintetico, agruparComissoesPorProfissional } from "@/lib/parser";
 
 export async function GET(request: NextRequest) {
-  if (!isSessionConfigured()) {
+  const searchParams = request.nextUrl.searchParams;
+  const store = searchParams.get("store") || undefined;
+
+  if (!isSessionConfigured(store)) {
     return NextResponse.json({ error: "Sessão não configurada" }, { status: 401 });
   }
 
-  const searchParams = request.nextUrl.searchParams;
   const dataIni = searchParams.get("dataIni");
   const dataFim = searchParams.get("dataFim");
 
@@ -17,8 +19,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const [detalheRaw, sinteticoRaw] = await Promise.all([
-      buscarComissoes(inicio, fim),
-      buscarComissoesSintetico(inicio, fim),
+      buscarComissoes(inicio, fim, undefined, store),
+      buscarComissoesSintetico(inicio, fim, undefined, store),
     ]);
 
     const detalhe = parseComissoes(detalheRaw);

@@ -3,11 +3,13 @@ import { buscarFinanceiroResumo, buscarFinanceiroGrafico, buscarFluxoCaixa, isSe
 import { parseFinanceiroResumo, parseFinanceiroTransacoes, parseComandas, parseFormasPagamentoResumo, parseMoneyBR } from "@/lib/parser";
 
 export async function GET(request: NextRequest) {
-  if (!isSessionConfigured()) {
+  const searchParams = request.nextUrl.searchParams;
+  const store = searchParams.get("store") || undefined;
+
+  if (!isSessionConfigured(store)) {
     return NextResponse.json({ error: "Sessão não configurada" }, { status: 401 });
   }
 
-  const searchParams = request.nextUrl.searchParams;
   const dataIni = searchParams.get("dataIni");
   const dataFim = searchParams.get("dataFim");
 
@@ -17,12 +19,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const [resumoRaw, transacoesRaw, formasPgtoRaw, comandasRaw, dashboardGeralRaw, grafico] = await Promise.all([
-      buscarFinanceiroResumo(inicio, fim, 1),
-      buscarFinanceiroResumo(inicio, fim, 3),
-      buscarFinanceiroResumo(inicio, fim, 6),
-      buscarFluxoCaixa(inicio, fim, 4),
-      buscarFluxoCaixa(inicio, fim, 1),
-      buscarFinanceiroGrafico(inicio, fim),
+      buscarFinanceiroResumo(inicio, fim, 1, undefined, store),
+      buscarFinanceiroResumo(inicio, fim, 3, undefined, store),
+      buscarFinanceiroResumo(inicio, fim, 6, undefined, store),
+      buscarFluxoCaixa(inicio, fim, 4, store),
+      buscarFluxoCaixa(inicio, fim, 1, store),
+      buscarFinanceiroGrafico(inicio, fim, store),
     ]);
 
     const resumo = parseFinanceiroResumo(resumoRaw);

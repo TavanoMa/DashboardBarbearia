@@ -1,41 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFileSync, readFileSync, existsSync } from "fs";
-import { join } from "path";
+import {
+  getActiveSessions,
+  saveSessions,
+  getCredentials,
+  type StoreSessions,
+} from "@/lib/appbarber-auth";
 
-const CONFIG_PATH = join(process.cwd(), ".appbarber.json");
-
-function loadConfig() {
-  if (!existsSync(CONFIG_PATH)) return null;
-  try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
-function applyConfig(config: { phpSessionId: string; appblzId?: string }) {
-  process.env.APPBARBER_PHPSESSID = config.phpSessionId;
-  process.env.APPBARBER_APPBLZ_ID = config.appblzId || "";
-}
-
-const existing = loadConfig();
-if (existing?.phpSessionId) applyConfig(existing);
-
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { phpSessionId, appblzId } = body;
-
-  const config = { phpSessionId, appblzId: appblzId || "" };
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-  applyConfig(config);
-
-  return NextResponse.json({ success: true });
-}
-
+/**
+ * GET /api/config
+ * Returns list of configured stores (id + name only, no secrets).
+ */
 export async function GET() {
-  const config = loadConfig();
+  const sessions = await getActiveSessions();
+  const credentials = await getCredentials();
+
   return NextResponse.json({
-    configured: !!config?.phpSessionId,
-    hasAppblz: !!config?.appblzId,
+    configured: sessions.length > 0 && !!sessions[0]?.phpSessionId,
+    hasCredentials: !!credentials,
+    stores: sessions.map((s) => ({ id: s.id, name: s.name })),
   });
+}
+
+/**
+ * POST /api/config
+ * Save store sessions manually (cookie-based setup).
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+
+    // Multi-store save
+    if (body.stores && Array.isArray(body.stores)) {
+      const stores: StoreSessions[] = body.stores.map(
+        (s: { id: string; name: string; phpSessionId: string; appblzId?: string }) => ({
+          id: s.id,
+          name: s.name,
+          phpSessionId: s.phpSessionId,
+          appblzId: s.appblzId || "",
+          lastVerified: Date.now(),
+        })
+      );
+      await saveSessions(stores);
+      return NextResponse.json({ success: true });
+    }
+
+    // Legacy single-store save
+    const { phpSessionId, appblzId, storeId, storeName } = body;
+    if (!phpSessionId) {
+      return NextResponse.json({ error: "phpSessionId obrigatório" }, { status: 400 });
+    }
+
+    const current = await getActiveSessions();
+    const id = storeId || "default";
+    const name = storeName || "Loja Padrão";
+    const newStore: StoreSessions = {
+      id,
+      name,
+      phpSessionId,
+      appblzId: appblzId || "",
+      lastVerified: Date.now(),
+    };
+
+    const idx = current.findIndex((s) => s.id === id);
+    if (idx >= 0) {
+      current[idx] = newStore;
+    } else {
+      current.push(newStore);
+    }
+
+    await saveSessions(current);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Config save error:", err);
+    return NextResponse.json({ error: "Erro ao salvar" }, { status: 500 });
+  }
 }

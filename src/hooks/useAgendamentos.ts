@@ -3,14 +3,20 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { Agendamento } from "@/lib/types";
 import { useDateRange } from "./useDateRange";
+import { useStore } from "./useStore";
 
 interface UseAgendamentosOptions {
   autoRefreshMs?: number;
+  /** Override the store from context (for comparison pages) */
+  overrideStore?: string;
 }
 
 export function useAgendamentos(opts: UseAgendamentosOptions = {}) {
-  const { autoRefreshMs = 60000 } = opts;
+  const { autoRefreshMs = 60000, overrideStore } = opts;
   const { dataIni, dataFim } = useDateRange();
+  const { currentStore } = useStore();
+  const store = overrideStore || currentStore;
+
   const [todos, setTodos] = useState<Agendamento[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,12 +25,13 @@ export function useAgendamentos(opts: UseAgendamentosOptions = {}) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (!store) return;
     setLoading(true);
     setError(null);
 
     try {
       const res = await fetch(
-        `/api/agendamentos?dataIni=${dataIni}&dataFim=${dataFim}`
+        `/api/agendamentos?dataIni=${dataIni}&dataFim=${dataFim}&store=${store}`
       );
       if (!res.ok) throw new Error("Falha na requisição");
       const data: Agendamento[] = await res.json();
@@ -48,11 +55,11 @@ export function useAgendamentos(opts: UseAgendamentosOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [dataIni, dataFim, sessionActive]);
+  }, [dataIni, dataFim, store, sessionActive]);
 
   useEffect(() => {
     fetchData();
-  }, [dataIni, dataFim]);
+  }, [dataIni, dataFim, store]);
 
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);

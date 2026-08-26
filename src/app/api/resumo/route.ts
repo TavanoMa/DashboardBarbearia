@@ -1,13 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { buscarResumoDashboard, isSessionConfigured } from "@/lib/appbarber";
 
-export async function GET() {
-  if (!isSessionConfigured()) {
+export async function GET(request: NextRequest) {
+  const store = request.nextUrl.searchParams.get("store") || undefined;
+
+  if (!isSessionConfigured(store)) {
     return NextResponse.json({ error: "Sessao nao configurada" }, { status: 401 });
   }
 
   try {
-    const raw = await buscarResumoDashboard();
+    const raw = await buscarResumoDashboard(store);
     const row = (raw?.[0] ?? {}) as Record<string, string>;
 
     const toInt = (v: string | undefined) => parseInt(v || "0", 10) || 0;

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { buscarProdutos, isSessionConfigured } from "@/lib/appbarber";
 import { parseMoneyBR } from "@/lib/parser";
 
@@ -17,13 +17,15 @@ export interface ProdutoEstoque {
   unidade: string;
 }
 
-export async function GET() {
-  if (!isSessionConfigured()) {
+export async function GET(request: NextRequest) {
+  const store = request.nextUrl.searchParams.get("store") || undefined;
+
+  if (!isSessionConfigured(store)) {
     return NextResponse.json({ error: "Sessão não configurada" }, { status: 401 });
   }
 
   try {
-    const raw = await buscarProdutos();
+    const raw = await buscarProdutos(store);
 
     const produtos: ProdutoEstoque[] = raw.map((r) => ({
       codigo: r.Codigo || "",

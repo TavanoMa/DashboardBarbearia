@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { buscarAgendamentosRaw, isSessionConfigured } from "@/lib/appbarber";
 import { parseAgendamentos } from "@/lib/parser";
 
-export async function GET() {
-  if (!isSessionConfigured()) {
+export async function GET(request: NextRequest) {
+  const store = request.nextUrl.searchParams.get("store") || undefined;
+
+  if (!isSessionConfigured(store)) {
     return NextResponse.json({
       connected: false,
       error: "Sessão não configurada",
@@ -12,7 +14,7 @@ export async function GET() {
 
   try {
     const hoje = new Date();
-    const raw = await buscarAgendamentosRaw(hoje, hoje);
+    const raw = await buscarAgendamentosRaw(hoje, hoje, undefined, store);
     const agendamentos = parseAgendamentos(raw);
 
     return NextResponse.json({
