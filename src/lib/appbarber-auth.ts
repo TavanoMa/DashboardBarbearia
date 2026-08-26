@@ -25,6 +25,12 @@ export interface StoreSessions {
   lastVerified?: number; // timestamp
 }
 
+export interface CredentialSet {
+  email: string;
+  password: string;
+  storeIds: string[]; // which stores this credential authenticates
+}
+
 interface ConfigFile {
   credentials?: {
     email: string;
@@ -133,26 +139,95 @@ function saveConfigFile(config: ConfigFile) {
 }
 
 // ---------------------------------------------------------------------------
-// Credentials
+// Credentials (multi-account support)
 // ---------------------------------------------------------------------------
 
-export async function getCredentials(): Promise<{ email: string; password: string } | null> {
-  // Env vars (highest priority)
-  if (process.env.APPBARBER_EMAIL && process.env.APPBARBER_PASSWORD) {
-    return { email: process.env.APPBARBER_EMAIL, password: process.env.APPBARBER_PASSWORD };
+/**
+ * Get ALL credential sets.  Priority:
+ *   1. APPBARBER_CREDENTIALS env var (JSON array)
+ *   2. APPBARBER_EMAIL + APPBARBER_PASSWORD env vars (single, backward compat)
+ *   3. Vercel KV
+ *   4. Config file (local dev)
+ */
+export async function getAllCredentials(): Promise<CredentialSet[]> {
+  // 1. JSON env var (supports multiple accounts)
+  if (process.env.APPBARBER_CREDENTIALS) {
+    try {
+      const parsed = JSON.parse(process.env.APPBARBER_CREDENTIALS);
+      if (Array.isArray(parsed)) {
+        return parsed.map((c: Record<string, unknown>) => ({
+          email: String(c.email || ""),
+          password: String(c.password || ""),
+          storeIds: Array.isArray(c.storeIds) ? c.storeIds as string[] : [],
+        })).filter(c => c.email && c.password);
+      }
+    } catch { /* ignore parse errors */ }
   }
-  // Vercel KV
-  const kvCreds = await kvGet<{ email: string; password: string }>(KV_CREDENTIALS_KEY);
-  if (kvCreds) return kvCreds;
-  // Config file (local dev)
+
+  // 2. Single env var (backward compat)
+  if (process.env.APPBARBER_EMAIL && process.env.APPBARBER_PASSWORD) {
+    return [{
+      email: process.env.APPBARBER_EMAIL,
+      password: process.env.APPBARBER_PASSWORD,
+      storeIds: [],
+    }];
+  }
+
+  // 3. Vercel KV
+  const kvCreds = await kvGet<CredentialSet[] | { email: string; password: string }>(KV_CREDENTIALS_KEY);
+  if (kvCreds) {
+    if (Array.isArray(kvCreds) && kvCreds.length > 0) {
+      return kvCreds;
+    }
+    // Backward compat: old single-credential format
+    if ("email" in kvCreds && kvCreds.email) {
+      return [{ email: kvCreds.email, password: kvCreds.password, storeIds: [] }];
+    }
+  }
+
+  // 4. Config file (local dev)
   const config = loadConfigFile();
-  return config.credentials || null;
+  if (config.credentials) {
+    return [{ email: config.credentials.email, password: config.credentials.password, storeIds: [] }];
+  }
+
+  return [];
 }
 
-export async function saveCredentials(email: string, password: string) {
+/**
+ * Backward-compat helper: returns the first credential set found.
+ */
+export async function getCredentials(): Promise<{ email: string; password: string } | null> {
+  const all = await getAllCredentials();
+  return all.length > 0 ? { email: all[0].email, password: all[0].password } : null;
+}
+
+/**
+ * Save credentials for specific stores. Merges with existing credentials
+ * (replaces entry for the same email, adds new ones).
+ */
+export async function saveCredentials(email: string, password: string, storeIds: string[] = []) {
+  // Load existing from KV
+  let allCreds: CredentialSet[] = [];
+  const kvCreds = await kvGet<CredentialSet[] | { email: string; password: string }>(KV_CREDENTIALS_KEY);
+  if (kvCreds) {
+    if (Array.isArray(kvCreds)) {
+      allCreds = kvCreds;
+    } else if ("email" in kvCreds && kvCreds.email) {
+      allCreds = [{ email: kvCreds.email, password: kvCreds.password, storeIds: [] }];
+    }
+  }
+
+  // Remove existing entry for same email (will re-add with updated storeIds)
+  allCreds = allCreds.filter(c => c.email !== email);
+
+  // Add updated entry
+  allCreds.push({ email, password, storeIds });
+
   // Save to KV (Vercel)
-  await kvSet(KV_CREDENTIALS_KEY, { email, password });
-  // Save to file (local dev)
+  await kvSet(KV_CREDENTIALS_KEY, allCreds);
+
+  // Save to file (local dev — last credential for backward compat)
   const config = loadConfigFile();
   config.credentials = { email, password };
   saveConfigFile(config);
@@ -280,26 +355,51 @@ export async function authenticateEstablishment(
 
 /**
  * Store sessions to KV (Vercel) + file (local) + memory cache.
+ * Replaces ALL sessions — use mergeAndSaveSessions() to keep existing ones.
  */
-export async function saveSessions(
-  stores: StoreSessions[],
-  credentials?: { email: string; password: string }
-) {
+export async function saveSessions(stores: StoreSessions[]) {
   // Memory cache
   sessionCache = stores;
   cacheTimestamp = Date.now();
 
   // Vercel KV
   await kvSet(KV_SESSIONS_KEY, stores);
-  if (credentials) {
-    await kvSet(KV_CREDENTIALS_KEY, credentials);
-  }
 
   // Local file
   const config = loadConfigFile();
   config.stores = stores;
-  if (credentials) config.credentials = credentials;
   saveConfigFile(config);
+}
+
+/**
+ * Merge new sessions with existing ones (from other logins) and save.
+ * New sessions overwrite existing ones with the same store id.
+ */
+export async function mergeAndSaveSessions(
+  newSessions: StoreSessions[],
+  credentials?: { email: string; password: string; storeIds?: string[] }
+) {
+  // Load existing sessions
+  const existing = await getActiveSessions();
+
+  // Remove existing sessions for stores being re-authenticated
+  const newIds = new Set(newSessions.map(s => s.id));
+  const kept = existing.filter(s => !newIds.has(s.id));
+
+  // Merge: kept existing + new
+  const merged = [...kept, ...newSessions];
+
+  // Save merged sessions
+  await saveSessions(merged);
+
+  // Save credentials if provided
+  if (credentials) {
+    await saveCredentials(
+      credentials.email,
+      credentials.password,
+      credentials.storeIds || newSessions.map(s => s.id)
+    );
+  }
 }
 
 /**

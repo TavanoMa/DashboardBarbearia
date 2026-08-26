@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   discoverEstablishments,
   authenticateEstablishment,
-  saveSessions,
-  saveCredentials,
+  mergeAndSaveSessions,
   slugify,
   type StoreSessions,
 } from "@/lib/appbarber-auth";
@@ -57,9 +56,8 @@ export async function POST(request: NextRequest) {
       }
 
       if (sessions.length > 0) {
-        // Save sessions + credentials for auto-refresh
-        await saveSessions(sessions, { email, password });
-        await saveCredentials(email, password);
+        // Merge with existing sessions (from other logins) + save credentials
+        await mergeAndSaveSessions(sessions, { email, password });
 
         return NextResponse.json({
           authenticated: true,
@@ -103,8 +101,7 @@ export async function POST(request: NextRequest) {
           lastVerified: Date.now(),
         },
       ];
-      saveSessions(sessions, { email, password });
-      saveCredentials(email, password);
+      await mergeAndSaveSessions(sessions, { email, password });
 
       return NextResponse.json({
         authenticated: true,
