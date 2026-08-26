@@ -1,0 +1,24 @@
+name: Keep Sessions Alive
+
+on:
+  schedule:
+    # Every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping keepalive endpoint
+        run: |
+          echo "Pinging keepalive at $(date -u)"
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            "https://dashboard-two-teal-35.vercel.app/api/cron/keepalive")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::warning::Keepalive returned HTTP $HTTP_CODE"
+          fi
