@@ -448,9 +448,11 @@ export function getActiveSessionsSync(): StoreSessions[] {
 }
 
 /**
- * Test if a session is still valid.
+ * Test if a session is still valid and bound to an establishment.
+ * Returns "active" if the session has real data, "alive" if the session
+ * responds but with empty/unbound data, or "dead" if the session is expired.
  */
-export async function testSession(phpSessionId: string): Promise<boolean> {
+export async function testSession(phpSessionId: string): Promise<"active" | "alive" | "dead"> {
   try {
     const res = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
       method: "POST",
@@ -465,33 +467,58 @@ export async function testSession(phpSessionId: string): Promise<boolean> {
       body: "",
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) return "dead";
     const text = await res.text();
-    if (text.includes("login") || text.includes("<html") || !text.trim()) return false;
+    if (text.includes("login") || text.includes("<html") || !text.trim()) return "dead";
     try {
       const json = JSON.parse(text);
-      return json.data && Array.isArray(json.data);
+      if (!json.data || !Array.isArray(json.data)) return "dead";
+
+      // Check if the data is meaningful (has real dashboard values)
+      // An unbound session returns data with all fields empty/zero
+      const row = json.data[0] as Record<string, string> | undefined;
+      if (!row) return "alive"; // Empty data array — session exists but no dashboard data
+
+      // If key dashboard fields are all empty/zero, the session is probably unbound
+      const hasRealData = Object.entries(row).some(([key, val]) => {
+        if (key === "TotalComandaPendentes" || key === "TotalRetorno" ||
+            key === "TotalClienteNovo" || key === "TotalContasReceber" ||
+            key === "TotalContasPagar" || key === "TotalUsuariosConectaramApp") {
+          return val !== "" && val !== "0" && val !== undefined;
+        }
+        return false;
+      });
+
+      return hasRealData ? "active" : "alive";
     } catch {
-      return false;
+      return "dead";
     }
   } catch {
-    return false;
+    return "dead";
   }
+}
+
+/**
+ * Backward-compat wrapper for code that just needs a boolean.
+ */
+export async function isSessionAlive(phpSessionId: string): Promise<boolean> {
+  const status = await testSession(phpSessionId);
+  return status !== "dead";
 }
 
 /**
  * Keepalive: ping all sessions + persist updated timestamps.
  */
 export async function keepAliveSessions(): Promise<
-  Array<{ id: string; name: string; alive: boolean }>
+  Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead" }>
 > {
   const sessions = await getActiveSessions();
   if (sessions.length === 0) return [];
 
   const results = await Promise.all(
     sessions.map(async (store) => {
-      const alive = await testSession(store.phpSessionId);
-      return { id: store.id, name: store.name, alive };
+      const status = await testSession(store.phpSessionId);
+      return { id: store.id, name: store.name, alive: status !== "dead", status };
     })
   );
 

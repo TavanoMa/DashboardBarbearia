@@ -21,15 +21,19 @@ export async function GET(request: NextRequest) {
   try {
     const results = await keepAliveSessions();
 
-    const allAlive = results.every((r) => r.alive);
-    const deadStores = results.filter((r) => !r.alive);
+    const allActive = results.every((r) => r.status === "active");
+    const deadStores = results.filter((r) => r.status === "dead");
+    const unboundStores = results.filter((r) => r.status === "alive");
 
     return NextResponse.json({
-      ok: allAlive,
+      ok: allActive,
       timestamp: new Date().toISOString(),
       stores: results,
       ...(deadStores.length > 0 && {
-        warning: `Sessões expiradas: ${deadStores.map((s) => s.name).join(", ")}`,
+        warning: `Sessões expiradas: ${deadStores.map((s) => s.name).join(", ")}. Reconfigure em /configuracoes`,
+      }),
+      ...(unboundStores.length > 0 && {
+        notice: `Sessões respondendo mas sem dados: ${unboundStores.map((s) => s.name).join(", ")}. Pode ser necessário reconfigurar os PHPSESSIDs.`,
       }),
     });
   } catch (err) {
