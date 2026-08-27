@@ -4,7 +4,7 @@ import { buscarResumoDashboard, isSessionConfigured } from "@/lib/appbarber";
 export async function GET(request: NextRequest) {
   const store = request.nextUrl.searchParams.get("store") || undefined;
 
-  if (!isSessionConfigured(store)) {
+  if (!(await isSessionConfigured(store))) {
     return NextResponse.json({ error: "Sessao nao configurada" }, { status: 401 });
   }
 

@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const store = searchParams.get("store") || undefined;
 
-  if (!isSessionConfigured(store)) {
+  if (!(await isSessionConfigured(store))) {
     return NextResponse.json({ error: "Sessão não configurada" }, { status: 401 });
   }
 

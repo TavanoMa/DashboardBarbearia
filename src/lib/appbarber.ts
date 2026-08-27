@@ -5,7 +5,7 @@ import type {
   ComissaoSinteticoRaw,
   FinanceiroGraficoMes,
 } from "./types";
-import { getActiveSessionsSync, type StoreSessions } from "./appbarber-auth";
+import { getActiveSessions, getActiveSessionsSync, type StoreSessions } from "./appbarber-auth";
 
 const BASE_URL = "https://sistema.appbarber.com.br";
 
@@ -20,9 +20,8 @@ export interface StoreConfig {
   appblzId: string;
 }
 
-function loadAllStores(): StoreConfig[] {
-  const sessions = getActiveSessionsSync();
-  return sessions.map((s: StoreSessions) => ({
+function toStoreConfigs(sessions: StoreSessions[]): StoreConfig[] {
+  return sessions.map((s) => ({
     id: s.id,
     name: s.name,
     phpSessionId: s.phpSessionId,
@@ -30,19 +29,41 @@ function loadAllStores(): StoreConfig[] {
   }));
 }
 
-function getStoreConfig(storeId?: string): StoreConfig | null {
-  const stores = loadAllStores();
+/**
+ * Load all stores — async version that reads KV (Vercel production).
+ * Always prefer this in async contexts (API routes).
+ */
+async function loadAllStoresAsync(): Promise<StoreConfig[]> {
+  const sessions = await getActiveSessions();
+  return toStoreConfigs(sessions);
+}
+
+/**
+ * Sync fallback — only uses memory cache + local file.
+ * Use only where async is impossible.
+ */
+function loadAllStoresSync(): StoreConfig[] {
+  const sessions = getActiveSessionsSync();
+  return toStoreConfigs(sessions);
+}
+
+async function getStoreConfigAsync(storeId?: string): Promise<StoreConfig | null> {
+  const stores = await loadAllStoresAsync();
   if (stores.length === 0) return null;
   if (!storeId) return stores[0];
   return stores.find((s) => s.id === storeId) || stores[0];
 }
 
 export function getStores(): StoreConfig[] {
-  return loadAllStores();
+  return loadAllStoresSync();
 }
 
-function getCookies(storeId?: string): string {
-  const config = getStoreConfig(storeId);
+export async function getStoresAsync(): Promise<StoreConfig[]> {
+  return loadAllStoresAsync();
+}
+
+async function getCookies(storeId?: string): Promise<string> {
+  const config = await getStoreConfigAsync(storeId);
   if (!config?.phpSessionId) return "";
   let cookie = `PHPSESSID=${config.phpSessionId}`;
   if (config.appblzId) cookie += `; APPBLZ_ID=${config.appblzId}`;
@@ -70,7 +91,7 @@ function formatDate(date: Date): string {
 }
 
 async function postEndpoint(path: string, body: URLSearchParams, storeId?: string): Promise<unknown> {
-  const cookie = getCookies(storeId);
+  const cookie = await getCookies(storeId);
   if (!cookie) return null;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -84,7 +105,7 @@ async function postEndpoint(path: string, body: URLSearchParams, storeId?: strin
 }
 
 async function getEndpoint(path: string, storeId?: string): Promise<unknown> {
-  const cookie = getCookies(storeId);
+  const cookie = await getCookies(storeId);
   if (!cookie) return null;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -318,8 +339,8 @@ export async function buscarProdutos(storeId?: string): Promise<Record<string, s
   }
 }
 
-export function isSessionConfigured(storeId?: string): boolean {
-  const config = getStoreConfig(storeId);
+export async function isSessionConfigured(storeId?: string): Promise<boolean> {
+  const config = await getStoreConfigAsync(storeId);
   return !!config?.phpSessionId;
 }
 

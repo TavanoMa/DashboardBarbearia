@@ -5,7 +5,7 @@ import { parseAgendamentos } from "@/lib/parser";
 export async function GET(request: NextRequest) {
   const store = request.nextUrl.searchParams.get("store") || undefined;
 
-  if (!isSessionConfigured(store)) {
+  if (!(await isSessionConfigured(store))) {
     return NextResponse.json({
       connected: false,
       error: "Sessão não configurada",
