@@ -7,6 +7,7 @@ const CONFIG_PATH = join(process.cwd(), ".appbarber.json");
 // KV keys
 const KV_SESSIONS_KEY = "appbarber:sessions";
 const KV_CREDENTIALS_KEY = "appbarber:credentials";
+const KV_KEEPALIVE_LOG_KEY = "appbarber:keepalive-log";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,17 @@ export interface CredentialSet {
   email: string;
   password: string;
   storeIds: string[]; // which stores this credential authenticates
+}
+
+export interface KeepAliveLogEntry {
+  timestamp: string;
+  stores: Array<{
+    id: string;
+    name: string;
+    status: "active" | "alive" | "dead";
+    prevStatus?: "active" | "alive" | "dead";
+    changed: boolean;
+  }>;
 }
 
 interface ConfigFile {
@@ -507,7 +519,7 @@ export async function isSessionAlive(phpSessionId: string): Promise<boolean> {
 }
 
 /**
- * Keepalive: ping all sessions + persist updated timestamps.
+ * Keepalive: ping all sessions + persist updated timestamps + log changes.
  */
 export async function keepAliveSessions(): Promise<
   Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead" }>
@@ -515,12 +527,44 @@ export async function keepAliveSessions(): Promise<
   const sessions = await getActiveSessions();
   if (sessions.length === 0) return [];
 
+  // Load previous log to detect status changes
+  const prevLog = await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
+  const lastEntry = prevLog.length > 0 ? prevLog[prevLog.length - 1] : null;
+
   const results = await Promise.all(
     sessions.map(async (store) => {
       const status = await testSession(store.phpSessionId);
       return { id: store.id, name: store.name, alive: status !== "dead", status };
     })
   );
+
+  // Build log entry — track status changes
+  const logStores = results.map((r) => {
+    const prev = lastEntry?.stores.find((s) => s.id === r.id);
+    const prevStatus = prev?.status;
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      prevStatus,
+      changed: prevStatus !== undefined && prevStatus !== r.status,
+    };
+  });
+
+  const hasChanges = logStores.some((s) => s.changed);
+
+  // Always log changes; for stable states, log every ~1 hour (every 6th run at 10min interval)
+  const shouldLog = hasChanges || prevLog.length === 0 || prevLog.length % 6 === 0;
+
+  if (shouldLog) {
+    const newEntry: KeepAliveLogEntry = {
+      timestamp: new Date().toISOString(),
+      stores: logStores,
+    };
+    // Keep last 100 entries (~16h of history at 10min intervals)
+    const updatedLog = [...prevLog.slice(-99), newEntry];
+    await kvSet(KV_KEEPALIVE_LOG_KEY, updatedLog);
+  }
 
   const updatedSessions = sessions.map((s) => {
     const result = results.find((r) => r.id === s.id);
@@ -538,6 +582,13 @@ export async function keepAliveSessions(): Promise<
   } catch { /* ignore on Vercel */ }
 
   return results;
+}
+
+/**
+ * Get keepalive log history for diagnostics.
+ */
+export async function getKeepAliveLog(): Promise<KeepAliveLogEntry[]> {
+  return await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
 }
 
 // ---------------------------------------------------------------------------
