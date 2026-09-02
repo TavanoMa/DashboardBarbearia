@@ -268,7 +268,14 @@ export default function DashboardPage() {
   const metricas = useMemo(() => calcularMetricas(agendamentos), [agendamentos]);
   const formasPgto = useMemo(() => agruparPorFormaPgto(agendamentos), [agendamentos]);
 
-  const faturamentoBruto = finData?.resumo?.totalBruto || metricas.faturamentoRealizado;
+  // formasPagamento sums ALL methods (card + PIX + cash);
+  // resumo.totalBruto only counts card transactions.
+  const faturamentoBruto = (() => {
+    if (finData?.formasPagamento && finData.formasPagamento.length > 0) {
+      return finData.formasPagamento.reduce((sum, f) => sum + f.totalBruto, 0);
+    }
+    return finData?.resumo?.totalBruto || metricas.faturamentoRealizado;
+  })();
 
   const dailyData = useMemo(() => buildDailyChart(agendamentos), [agendamentos]);
   const hourlyData = useMemo(() => buildHourlyChart(agendamentos), [agendamentos]);
