@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getActiveSessions,
-  saveSessions,
+  mergeAndSaveSessions,
   getCredentials,
   type StoreSessions,
 } from "@/lib/appbarber-auth";
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Multi-store save
+    // Multi-store save — merge with existing so we don't wipe other stores
     if (body.stores && Array.isArray(body.stores)) {
       const stores: StoreSessions[] = body.stores.map(
         (s: { id: string; name: string; phpSessionId: string; appblzId?: string }) => ({
@@ -40,17 +40,16 @@ export async function POST(request: NextRequest) {
           lastVerified: Date.now(),
         })
       );
-      await saveSessions(stores);
+      await mergeAndSaveSessions(stores);
       return NextResponse.json({ success: true });
     }
 
-    // Legacy single-store save
+    // Legacy single-store save — also merges to preserve other stores
     const { phpSessionId, appblzId, storeId, storeName } = body;
     if (!phpSessionId) {
       return NextResponse.json({ error: "phpSessionId obrigatório" }, { status: 400 });
     }
 
-    const current = await getActiveSessions();
     const id = storeId || "default";
     const name = storeName || "Loja Padrão";
     const newStore: StoreSessions = {
@@ -61,14 +60,7 @@ export async function POST(request: NextRequest) {
       lastVerified: Date.now(),
     };
 
-    const idx = current.findIndex((s) => s.id === id);
-    if (idx >= 0) {
-      current[idx] = newStore;
-    } else {
-      current.push(newStore);
-    }
-
-    await saveSessions(current);
+    await mergeAndSaveSessions([newStore]);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Config save error:", err);
