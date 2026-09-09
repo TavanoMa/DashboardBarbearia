@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   GitCompareArrows,
+  UserRoundSearch,
   MapPin,
   ChevronDown,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const menuItems = [
   { href: "/profissionais", label: "Profissionais", icon: Scissors },
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/comparativo", label: "Comparar Lojas", icon: GitCompareArrows },
+  { href: "/comparar-profissionais", label: "Comparar Profissionais", icon: UserRoundSearch },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
