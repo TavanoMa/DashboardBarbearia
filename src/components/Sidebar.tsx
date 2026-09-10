@@ -17,6 +17,7 @@ import {
   X,
   GitCompareArrows,
   UserRoundSearch,
+  Building2,
   MapPin,
   ChevronDown,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import { useStore } from "@/hooks/useStore";
 
 const menuItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/geral", label: "Visão Geral", icon: Building2 },
   { href: "/agendamentos", label: "Agendamentos", icon: Calendar },
   { href: "/financeiro", label: "Financeiro", icon: DollarSign },
   { href: "/estoque", label: "Estoque", icon: Package },
