@@ -51,7 +51,7 @@ async function getStoreConfigAsync(storeId?: string): Promise<StoreConfig | null
   const stores = await loadAllStoresAsync();
   if (stores.length === 0) return null;
   if (!storeId) return stores[0];
-  return stores.find((s) => s.id === storeId) || stores[0];
+  return stores.find((s) => s.id === storeId) || null;
 }
 
 export function getStores(): StoreConfig[] {
