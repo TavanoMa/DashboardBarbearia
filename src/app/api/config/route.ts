@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getActiveSessions,
   mergeAndSaveSessions,
+  saveSessions,
   getCredentials,
   type StoreSessions,
 } from "@/lib/appbarber-auth";
@@ -65,5 +66,35 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Config save error:", err);
     return NextResponse.json({ error: "Erro ao salvar" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/config?store=<storeId>
+ * Remove a specific store session from KV.
+ */
+export async function DELETE(request: NextRequest) {
+  const storeId = request.nextUrl.searchParams.get("store");
+  if (!storeId) {
+    return NextResponse.json({ error: "Parâmetro ?store= obrigatório" }, { status: 400 });
+  }
+
+  try {
+    const sessions = await getActiveSessions();
+    const filtered = sessions.filter((s) => s.id !== storeId);
+
+    if (filtered.length === sessions.length) {
+      return NextResponse.json({ error: `Loja "${storeId}" não encontrada` }, { status: 404 });
+    }
+
+    await saveSessions(filtered);
+    return NextResponse.json({
+      success: true,
+      removed: storeId,
+      remaining: filtered.map((s) => ({ id: s.id, name: s.name })),
+    });
+  } catch (err) {
+    console.error("Config delete error:", err);
+    return NextResponse.json({ error: "Erro ao remover" }, { status: 500 });
   }
 }
