@@ -658,7 +658,7 @@ export default function CompararProfissionaisPage() {
                       strokeWidth={2}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value: number) => [value.toFixed(0) + "%", ""]} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value) => [Number(value).toFixed(0) + "%", ""]} />
                   </RadarChart>
                 </ResponsiveContainer>
               </div>
