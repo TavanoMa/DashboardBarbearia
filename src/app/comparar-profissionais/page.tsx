@@ -697,7 +697,7 @@ export default function CompararProfissionaisPage() {
                     <YAxis tick={AXIS_STYLE} tickLine={false} axisLine={false} tickFormatter={formatBRLShort} />
                     <Tooltip
                       contentStyle={TOOLTIP_STYLE}
-                      formatter={(value: number) => [formatBRL(value), ""]}
+                      formatter={(value) => [formatBRL(Number(value)), ""]}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Line
