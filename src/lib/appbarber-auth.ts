@@ -23,6 +23,7 @@ export interface StoreSessions {
   name: string;
   phpSessionId: string;
   appblzId: string;
+  establishmentCode?: string; // AppBarber establishment code for re-auth
   lastVerified?: number; // timestamp
 }
 
@@ -40,6 +41,7 @@ export interface KeepAliveLogEntry {
     status: "active" | "alive" | "dead";
     prevStatus?: "active" | "alive" | "dead";
     changed: boolean;
+    reauthed?: boolean;
   }>;
 }
 
@@ -522,7 +524,7 @@ export async function isSessionAlive(phpSessionId: string): Promise<boolean> {
  * Keepalive: ping all sessions + persist updated timestamps + log changes.
  */
 export async function keepAliveSessions(): Promise<
-  Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead" }>
+  Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean }>
 > {
   const sessions = await getActiveSessions();
   if (sessions.length === 0) return [];
@@ -531,12 +533,35 @@ export async function keepAliveSessions(): Promise<
   const prevLog = await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
   const lastEntry = prevLog.length > 0 ? prevLog[prevLog.length - 1] : null;
 
-  const results = await Promise.all(
-    sessions.map(async (store) => {
-      const status = await testSession(store.phpSessionId);
-      return { id: store.id, name: store.name, alive: status !== "dead", status };
-    })
-  );
+  const results: Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean }> = [];
+
+  for (const store of sessions) {
+    let status = await testSession(store.phpSessionId);
+    let reauthed = false;
+
+    // If session is unbound ("alive") or dead, try to re-authenticate
+    if (status !== "active") {
+      console.log(`[keepalive] ${store.name}: status=${status}, attempting reauth...`);
+      const newSession = await tryReauthStore(store);
+      if (newSession) {
+        // Update the session in our list
+        store.phpSessionId = newSession.phpSessionId;
+        store.lastVerified = Date.now();
+        if (newSession.establishmentCode) {
+          store.establishmentCode = newSession.establishmentCode;
+        }
+        // Re-test the new session
+        const newStatus = await testSession(newSession.phpSessionId);
+        console.log(`[keepalive] ${store.name}: reauth result=${newStatus}`);
+        if (newStatus === "active") {
+          status = "active";
+          reauthed = true;
+        }
+      }
+    }
+
+    results.push({ id: store.id, name: store.name, alive: status !== "dead", status, reauthed });
+  }
 
   // Build log entry — track status changes
   const logStores = results.map((r) => {
@@ -548,13 +573,15 @@ export async function keepAliveSessions(): Promise<
       status: r.status,
       prevStatus,
       changed: prevStatus !== undefined && prevStatus !== r.status,
+      reauthed: r.reauthed || false,
     };
   });
 
   const hasChanges = logStores.some((s) => s.changed);
 
-  // Always log changes; for stable states, log every ~1 hour (every 6th run at 10min interval)
-  const shouldLog = hasChanges || prevLog.length === 0 || prevLog.length % 6 === 0;
+  // Always log changes or reauths; for stable states, log every ~1 hour
+  const hasReauths = logStores.some((s) => s.reauthed);
+  const shouldLog = hasChanges || hasReauths || prevLog.length === 0 || prevLog.length % 6 === 0;
 
   if (shouldLog) {
     const newEntry: KeepAliveLogEntry = {
@@ -571,7 +598,7 @@ export async function keepAliveSessions(): Promise<
     return result?.alive ? { ...s, lastVerified: Date.now() } : s;
   });
 
-  // Persist everywhere
+  // Persist everywhere (includes new phpSessionIds from reauth)
   sessionCache = updatedSessions;
   cacheTimestamp = Date.now();
   await kvSet(KV_SESSIONS_KEY, updatedSessions);
@@ -589,6 +616,75 @@ export async function keepAliveSessions(): Promise<
  */
 export async function getKeepAliveLog(): Promise<KeepAliveLogEntry[]> {
   return await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
+}
+
+// ---------------------------------------------------------------------------
+// Auto re-authentication
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to re-authenticate a store whose session is "alive" (unbound) or "dead".
+ * Uses saved credentials + establishment code.
+ * Returns the new phpSessionId if successful, null otherwise.
+ */
+async function tryReauthStore(
+  store: StoreSessions
+): Promise<{ phpSessionId: string; establishmentCode?: string } | null> {
+  // Get credentials for this store
+  const allCreds = await getAllCredentials();
+  if (allCreds.length === 0) {
+    console.log(`[reauth] ${store.name}: no credentials found`);
+    return null;
+  }
+
+  // Find credential that matches this store, or use first available
+  const cred = allCreds.find((c) => c.storeIds.includes(store.id)) || allCreds[0];
+
+  let estCode = store.establishmentCode;
+
+  // If no establishment code saved, discover it
+  if (!estCode) {
+    console.log(`[reauth] ${store.name}: no establishmentCode, discovering...`);
+    const discovery = await discoverEstablishments(cred.email, cred.password, "");
+    if (discovery.success && discovery.establishments) {
+      // Match by store name (case-insensitive, partial match)
+      const match = discovery.establishments.find(
+        (e) => slugify(e.name) === store.id || e.name.toLowerCase().includes(store.name.toLowerCase())
+      );
+      if (match) {
+        estCode = match.code;
+        console.log(`[reauth] ${store.name}: discovered code=${estCode}`);
+      } else {
+        console.log(`[reauth] ${store.name}: could not match establishment from ${discovery.establishments.map(e => e.name).join(", ")}`);
+        return null;
+      }
+    } else if (discovery.singleSession) {
+      // Single establishment — direct session
+      console.log(`[reauth] ${store.name}: single establishment, direct session`);
+      return { phpSessionId: discovery.singleSession.phpSessionId };
+    } else {
+      console.log(`[reauth] ${store.name}: discovery failed — ${discovery.error}`);
+      return null;
+    }
+  }
+
+  console.log(`[reauth] ${store.name}: attempting auth with code=${estCode}...`);
+
+  // Try with empty recaptcha token (server-to-server may not need it)
+  const result = await authenticateEstablishment(
+    cred.email,
+    cred.password,
+    estCode,
+    "" // empty token — AppBarber may not validate for server calls
+  );
+
+  if (result.success && result.phpSessionId) {
+    console.log(`[reauth] ${store.name}: SUCCESS — new session obtained`);
+    return { phpSessionId: result.phpSessionId, establishmentCode: estCode };
+  }
+
+  console.log(`[reauth] ${store.name}: failed — ${result.error}`);
+  return null;
 }
 
 // ---------------------------------------------------------------------------

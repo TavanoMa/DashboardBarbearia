@@ -24,16 +24,20 @@ export async function GET(request: NextRequest) {
     const allActive = results.every((r) => r.status === "active");
     const deadStores = results.filter((r) => r.status === "dead");
     const unboundStores = results.filter((r) => r.status === "alive");
+    const reauthedStores = results.filter((r) => r.reauthed);
 
     return NextResponse.json({
       ok: allActive,
       timestamp: new Date().toISOString(),
       stores: results,
+      ...(reauthedStores.length > 0 && {
+        reauthed: `Sessões re-autenticadas automaticamente: ${reauthedStores.map((s) => s.name).join(", ")}`,
+      }),
       ...(deadStores.length > 0 && {
-        warning: `Sessões expiradas: ${deadStores.map((s) => s.name).join(", ")}. Reconfigure em /configuracoes`,
+        warning: `Sessões expiradas (reauth falhou): ${deadStores.map((s) => s.name).join(", ")}. Reconfigure em /configuracoes`,
       }),
       ...(unboundStores.length > 0 && {
-        notice: `Sessões respondendo mas sem dados: ${unboundStores.map((s) => s.name).join(", ")}. Pode ser necessário reconfigurar os PHPSESSIDs.`,
+        notice: `Sessões sem dados (reauth falhou): ${unboundStores.map((s) => s.name).join(", ")}. Reconfigure em /configuracoes`,
       }),
     });
   } catch (err) {

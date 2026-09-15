@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
             id: slugify(est.name),
             name: est.name,
             phpSessionId: result.phpSessionId,
-            appblzId: "", // Not needed — session is already bound to establishment
+            appblzId: "",
+            establishmentCode: est.code, // Save for auto-reauth
             lastVerified: Date.now(),
           });
         } else {
