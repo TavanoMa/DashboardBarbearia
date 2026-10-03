@@ -113,10 +113,16 @@ function buildProfStats(
     entry.atendimentos++;
     dayMap.set(dia, entry);
   }
+  const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
   const diario = Array.from(dayMap.entries())
     .map(([dia, data]) => {
-      const parts = dia.split("/");
-      const label = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : dia;
+      const parts = dia.split("/").map(Number);
+      let label = dia;
+      if (parts.length >= 3) {
+        const dateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+        const diaSemana = DIAS_SEMANA[dateObj.getDay()];
+        label = `${String(parts[0]).padStart(2, "0")}/${String(parts[1]).padStart(2, "0")} (${diaSemana})`;
+      }
       return { dia, label, ...data };
     })
     .sort((a, b) => {
@@ -429,12 +435,18 @@ export default function CompararProfissionaisPage() {
       ...stats1.diario.map((d) => d.dia),
       ...stats2.diario.map((d) => d.dia),
     ]);
+    const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
     return Array.from(allDays)
       .map((dia) => {
         const d1 = stats1.diario.find((d) => d.dia === dia);
         const d2 = stats2.diario.find((d) => d.dia === dia);
-        const parts = dia.split("/");
-        const label = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : dia;
+        const parts = dia.split("/").map(Number);
+        let label = dia;
+        if (parts.length >= 3) {
+          const dateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+          const diaSemana = DIAS_SEMANA[dateObj.getDay()];
+          label = `${String(parts[0]).padStart(2, "0")}/${String(parts[1]).padStart(2, "0")} (${diaSemana})`;
+        }
         return {
           dia,
           label,

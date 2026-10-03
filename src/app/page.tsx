@@ -107,10 +107,16 @@ function buildDailyChart(agendamentos: Agendamento[]): DailyChartItem[] {
     entry.agendamentos.push(a);
     map.set(datePart, entry);
   }
+  const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
   return Array.from(map.entries())
     .map(([dia, data]) => {
-      const parts = dia.split("/");
-      const label = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : dia;
+      const parts = dia.split("/").map(Number);
+      let label = dia;
+      if (parts.length >= 3) {
+        const dateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+        const diaSemana = DIAS_SEMANA[dateObj.getDay()];
+        label = `${String(parts[0]).padStart(2, "0")}/${String(parts[1]).padStart(2, "0")} (${diaSemana})`;
+      }
       return { dia, label, ...data };
     })
     .sort((a, b) => {
