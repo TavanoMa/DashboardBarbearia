@@ -675,9 +675,66 @@ async function tryReauthStore(
     }
   }
 
-  console.log(`[reauth] ${store.name}: attempting auth with code=${estCode}...`);
+  // Strategy 1: Try to rebind existing session to the establishment
+  // This avoids reCAPTCHA by reusing the alive PHPSESSID
+  if (store.phpSessionId) {
+    console.log(`[reauth] ${store.name}: trying rebind with existing session...`);
+    try {
+      const rebindBody = new URLSearchParams();
+      rebindBody.append("login", cred.email);
+      rebindBody.append("senha", cred.password);
+      rebindBody.append("origem", "sistema.appbarber.com.br");
+      rebindBody.append("establishment_code", estCode);
+      rebindBody.append("token", "");
+      rebindBody.append("showOrNotShowInfoDates", "true");
 
-  // Try with dummy token first, fall back to empty
+      const rebindRes = await fetch(`${BASE_URL}/php/auth.php`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "application/json, */*",
+          origin: BASE_URL,
+          referer: `${BASE_URL}/login.php`,
+          cookie: `PHPSESSID=${store.phpSessionId}`,
+        },
+        body: rebindBody.toString(),
+      });
+
+      const rebindData = await rebindRes.json() as AuthResponse;
+      const rebindCookie = rebindRes.headers.get("set-cookie") || "";
+      const rebindSessionId = extractPhpSessionId(rebindCookie);
+
+      if (!rebindData.error) {
+        const sid = rebindSessionId || store.phpSessionId;
+        const testRes = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
+          method: "POST",
+          headers: {
+            accept: "application/json, */*",
+            "content-type": "application/x-www-form-urlencoded",
+            origin: BASE_URL,
+            referer: `${BASE_URL}/index.php`,
+            "x-requested-with": "XMLHttpRequest",
+            cookie: `PHPSESSID=${sid}`,
+          },
+          body: "",
+        });
+        if (testRes.ok) {
+          const testData = await testRes.text();
+          if (testData.length > 10) {
+            console.log(`[reauth] ${store.name}: REBIND SUCCESS — session rebound to establishment`);
+            return { phpSessionId: sid, establishmentCode: estCode };
+          }
+        }
+      }
+      console.log(`[reauth] ${store.name}: rebind failed (${rebindData.auth?.[0]?.result || "no data"}), trying full login...`);
+    } catch (err) {
+      console.log(`[reauth] ${store.name}: rebind error (${err}), trying full login...`);
+    }
+  }
+
+  // Strategy 2: Full login with dummy token, then empty token
+  console.log(`[reauth] ${store.name}: attempting full auth with code=${estCode}...`);
+
   let result = await authenticateEstablishment(cred.email, cred.password, estCode, DUMMY_TOKEN);
   if (!result.success) {
     console.log(`[reauth] ${store.name}: dummy token failed (${result.error}), trying empty...`);
