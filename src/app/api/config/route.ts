@@ -4,6 +4,8 @@ import {
   mergeAndSaveSessions,
   saveSessions,
   getCredentials,
+  getAllCredentials,
+  saveCredentials,
   type StoreSessions,
 } from "@/lib/appbarber-auth";
 
@@ -66,6 +68,38 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Config save error:", err);
     return NextResponse.json({ error: "Erro ao salvar" }, { status: 500 });
+  }
+}
+
+/**
+ * PUT /api/config
+ * Save credentials for auto-reauth (bypasses reCAPTCHA login).
+ * Body: { email, password, storeIds[] }
+ * Can be called multiple times for different accounts.
+ */
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { email, password, storeIds } = body;
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: "email e password obrigatórios" },
+        { status: 400 }
+      );
+    }
+
+    await saveCredentials(email, password, storeIds || []);
+
+    const allCreds = await getAllCredentials();
+    return NextResponse.json({
+      success: true,
+      totalCredentials: allCreds.length,
+      saved: { email, storeIds: storeIds || [] },
+    });
+  } catch (err) {
+    console.error("Config credentials save error:", err);
+    return NextResponse.json({ error: "Erro ao salvar credenciais" }, { status: 500 });
   }
 }
 
