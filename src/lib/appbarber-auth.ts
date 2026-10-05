@@ -524,7 +524,7 @@ export async function isSessionAlive(phpSessionId: string): Promise<boolean> {
  * Keepalive: ping all sessions + persist updated timestamps + log changes.
  */
 export async function keepAliveSessions(): Promise<
-  Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean }>
+  Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean; hasEstCode?: boolean }>
 > {
   const sessions = await getActiveSessions();
   if (sessions.length === 0) return [];
@@ -533,7 +533,7 @@ export async function keepAliveSessions(): Promise<
   const prevLog = await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
   const lastEntry = prevLog.length > 0 ? prevLog[prevLog.length - 1] : null;
 
-  const results: Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean }> = [];
+  const results: Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean; hasEstCode?: boolean }> = [];
 
   for (const store of sessions) {
     let status = await testSession(store.phpSessionId);
@@ -560,7 +560,10 @@ export async function keepAliveSessions(): Promise<
       }
     }
 
-    results.push({ id: store.id, name: store.name, alive: status !== "dead", status, reauthed });
+    results.push({
+      id: store.id, name: store.name, alive: status !== "dead", status, reauthed,
+      hasEstCode: !!store.establishmentCode,
+    });
   }
 
   // Build log entry — track status changes
