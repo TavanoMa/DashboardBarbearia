@@ -640,12 +640,20 @@ async function tryReauthStore(
   // Find credential that matches this store, or use first available
   const cred = allCreds.find((c) => c.storeIds.includes(store.id)) || allCreds[0];
 
+  // Dummy reCAPTCHA token — some systems only check it's non-empty
+  const DUMMY_TOKEN = "03AFcWeA5_server_reauth_token";
+
   let estCode = store.establishmentCode;
 
   // If no establishment code saved, discover it
   if (!estCode) {
     console.log(`[reauth] ${store.name}: no establishmentCode, discovering...`);
-    const discovery = await discoverEstablishments(cred.email, cred.password, "");
+    // Try with dummy token first, fall back to empty
+    let discovery = await discoverEstablishments(cred.email, cred.password, DUMMY_TOKEN);
+    if (!discovery.success) {
+      console.log(`[reauth] ${store.name}: discovery with dummy token failed (${discovery.error}), trying empty...`);
+      discovery = await discoverEstablishments(cred.email, cred.password, "");
+    }
     if (discovery.success && discovery.establishments) {
       // Match by store name (case-insensitive, partial match)
       const match = discovery.establishments.find(
@@ -653,13 +661,12 @@ async function tryReauthStore(
       );
       if (match) {
         estCode = match.code;
-        console.log(`[reauth] ${store.name}: discovered code=${estCode}`);
+        console.log(`[reauth] ${store.name}: discovered code=${estCode} (from ${discovery.establishments.map(e => `${e.name}=${e.code}`).join(", ")})`);
       } else {
         console.log(`[reauth] ${store.name}: could not match establishment from ${discovery.establishments.map(e => e.name).join(", ")}`);
         return null;
       }
     } else if (discovery.singleSession) {
-      // Single establishment — direct session
       console.log(`[reauth] ${store.name}: single establishment, direct session`);
       return { phpSessionId: discovery.singleSession.phpSessionId };
     } else {
@@ -670,20 +677,19 @@ async function tryReauthStore(
 
   console.log(`[reauth] ${store.name}: attempting auth with code=${estCode}...`);
 
-  // Try with empty recaptcha token (server-to-server may not need it)
-  const result = await authenticateEstablishment(
-    cred.email,
-    cred.password,
-    estCode,
-    "" // empty token — AppBarber may not validate for server calls
-  );
+  // Try with dummy token first, fall back to empty
+  let result = await authenticateEstablishment(cred.email, cred.password, estCode, DUMMY_TOKEN);
+  if (!result.success) {
+    console.log(`[reauth] ${store.name}: dummy token failed (${result.error}), trying empty...`);
+    result = await authenticateEstablishment(cred.email, cred.password, estCode, "");
+  }
 
   if (result.success && result.phpSessionId) {
     console.log(`[reauth] ${store.name}: SUCCESS — new session obtained`);
     return { phpSessionId: result.phpSessionId, establishmentCode: estCode };
   }
 
-  console.log(`[reauth] ${store.name}: failed — ${result.error}`);
+  console.log(`[reauth] ${store.name}: FAILED — ${result.error}`);
   return null;
 }
 
