@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: allActive,
-      v: 3,
+      v: 4,
       timestamp: new Date().toISOString(),
       stores: results,
       ...(reauthedStores.length > 0 && {

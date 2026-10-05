@@ -643,109 +643,148 @@ async function tryReauthStore(
   // Find credential that matches this store, or use first available
   const cred = allCreds.find((c) => c.storeIds.includes(store.id)) || allCreds[0];
 
-  // Dummy reCAPTCHA token — some systems only check it's non-empty
-  const DUMMY_TOKEN = "03AFcWeA5_server_reauth_token";
-
   let estCode = store.establishmentCode;
 
-  // If no establishment code saved, discover it
-  if (!estCode) {
-    console.log(`[reauth] ${store.name}: no establishmentCode, discovering...`);
-    // Try with dummy token first, fall back to empty
-    let discovery = await discoverEstablishments(cred.email, cred.password, DUMMY_TOKEN);
-    if (!discovery.success) {
-      console.log(`[reauth] ${store.name}: discovery with dummy token failed (${discovery.error}), trying empty...`);
-      discovery = await discoverEstablishments(cred.email, cred.password, "");
+  // Strategy 1: Use existing alive session cookie for discovery + rebind
+  // This may bypass reCAPTCHA since the session already exists
+  if (store.phpSessionId) {
+    console.log(`[reauth] ${store.name}: trying session-cookie approach (estCode=${estCode || "none"})...`);
+    try {
+      // Step A: If no estCode, try discovery with existing session cookie
+      if (!estCode) {
+        const discBody = new URLSearchParams();
+        discBody.append("login", cred.email);
+        discBody.append("senha", cred.password);
+        discBody.append("origem", "sistema.appbarber.com.br");
+        discBody.append("token", "");
+        discBody.append("showOrNotShowInfoDates", "true");
+
+        const discRes = await fetch(`${BASE_URL}/php/auth.php`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            accept: "application/json, */*",
+            origin: BASE_URL,
+            referer: `${BASE_URL}/login.php`,
+            cookie: `PHPSESSID=${store.phpSessionId}`,
+          },
+          body: discBody.toString(),
+        });
+
+        const discData = await discRes.json() as AuthResponse;
+        console.log(`[reauth] ${store.name}: discovery response error=${discData.error}, code=${discData.error_action_code}, auth=${JSON.stringify(discData.auth?.map(a => ({ code: a.establishment_code, name: a.establishment_name, result: a.result })))}`);
+
+        if (discData.error && discData.error_action_code === 2 && discData.auth) {
+          const establishments = discData.auth
+            .filter((a) => a.establishment_code && a.establishment_name)
+            .map((a) => ({ code: a.establishment_code!, name: a.establishment_name! }));
+          const match = establishments.find(
+            (e) => slugify(e.name) === store.id || e.name.toLowerCase().includes(store.name.toLowerCase())
+          );
+          if (match) {
+            estCode = match.code;
+            console.log(`[reauth] ${store.name}: discovered code=${estCode} via session cookie`);
+          } else {
+            console.log(`[reauth] ${store.name}: no match in ${establishments.map(e => e.name).join(", ")}`);
+          }
+        } else if (!discData.error) {
+          // Might have got a direct session
+          const newCookie = discRes.headers.get("set-cookie") || "";
+          const newSid = extractPhpSessionId(newCookie);
+          if (newSid) {
+            console.log(`[reauth] ${store.name}: direct session from discovery`);
+            return { phpSessionId: newSid };
+          }
+        }
+      }
+
+      // Step B: If we have estCode now, try rebind with session cookie
+      if (estCode) {
+        const rebindBody = new URLSearchParams();
+        rebindBody.append("login", cred.email);
+        rebindBody.append("senha", cred.password);
+        rebindBody.append("origem", "sistema.appbarber.com.br");
+        rebindBody.append("establishment_code", estCode);
+        rebindBody.append("token", "");
+        rebindBody.append("showOrNotShowInfoDates", "true");
+
+        const rebindRes = await fetch(`${BASE_URL}/php/auth.php`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            accept: "application/json, */*",
+            origin: BASE_URL,
+            referer: `${BASE_URL}/login.php`,
+            cookie: `PHPSESSID=${store.phpSessionId}`,
+          },
+          body: rebindBody.toString(),
+        });
+
+        const rebindData = await rebindRes.json() as AuthResponse;
+        const rebindCookie = rebindRes.headers.get("set-cookie") || "";
+        const rebindSid = extractPhpSessionId(rebindCookie);
+        const sid = rebindSid || store.phpSessionId;
+
+        console.log(`[reauth] ${store.name}: rebind response error=${rebindData.error}, newSid=${!!rebindSid}, result=${rebindData.auth?.[0]?.result || "none"}`);
+
+        if (!rebindData.error || rebindSid) {
+          const testRes = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
+            method: "POST",
+            headers: {
+              accept: "application/json, */*",
+              "content-type": "application/x-www-form-urlencoded",
+              origin: BASE_URL,
+              referer: `${BASE_URL}/index.php`,
+              "x-requested-with": "XMLHttpRequest",
+              cookie: `PHPSESSID=${sid}`,
+            },
+            body: "",
+          });
+          if (testRes.ok) {
+            const testText = await testRes.text();
+            if (testText.length > 10 && !testText.includes("<html")) {
+              console.log(`[reauth] ${store.name}: REBIND SUCCESS`);
+              return { phpSessionId: sid, establishmentCode: estCode };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[reauth] ${store.name}: session-cookie approach error: ${err}`);
     }
+  }
+
+  // Strategy 2: Standard discovery + auth (no session cookie)
+  if (!estCode) {
+    console.log(`[reauth] ${store.name}: standard discovery (no estCode yet)...`);
+    const discovery = await discoverEstablishments(cred.email, cred.password, "");
     if (discovery.success && discovery.establishments) {
-      // Match by store name (case-insensitive, partial match)
       const match = discovery.establishments.find(
         (e) => slugify(e.name) === store.id || e.name.toLowerCase().includes(store.name.toLowerCase())
       );
       if (match) {
         estCode = match.code;
-        console.log(`[reauth] ${store.name}: discovered code=${estCode} (from ${discovery.establishments.map(e => `${e.name}=${e.code}`).join(", ")})`);
-      } else {
-        console.log(`[reauth] ${store.name}: could not match establishment from ${discovery.establishments.map(e => e.name).join(", ")}`);
-        return null;
+        console.log(`[reauth] ${store.name}: discovered code=${estCode}`);
       }
     } else if (discovery.singleSession) {
-      console.log(`[reauth] ${store.name}: single establishment, direct session`);
+      console.log(`[reauth] ${store.name}: single establishment`);
       return { phpSessionId: discovery.singleSession.phpSessionId };
     } else {
-      console.log(`[reauth] ${store.name}: discovery failed — ${discovery.error}`);
-      return null;
+      console.log(`[reauth] ${store.name}: discovery failed: ${discovery.error}`);
     }
   }
 
-  // Strategy 1: Try to rebind existing session to the establishment
-  // This avoids reCAPTCHA by reusing the alive PHPSESSID
-  if (store.phpSessionId) {
-    console.log(`[reauth] ${store.name}: trying rebind with existing session...`);
-    try {
-      const rebindBody = new URLSearchParams();
-      rebindBody.append("login", cred.email);
-      rebindBody.append("senha", cred.password);
-      rebindBody.append("origem", "sistema.appbarber.com.br");
-      rebindBody.append("establishment_code", estCode);
-      rebindBody.append("token", "");
-      rebindBody.append("showOrNotShowInfoDates", "true");
-
-      const rebindRes = await fetch(`${BASE_URL}/php/auth.php`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          accept: "application/json, */*",
-          origin: BASE_URL,
-          referer: `${BASE_URL}/login.php`,
-          cookie: `PHPSESSID=${store.phpSessionId}`,
-        },
-        body: rebindBody.toString(),
-      });
-
-      const rebindData = await rebindRes.json() as AuthResponse;
-      const rebindCookie = rebindRes.headers.get("set-cookie") || "";
-      const rebindSessionId = extractPhpSessionId(rebindCookie);
-
-      if (!rebindData.error) {
-        const sid = rebindSessionId || store.phpSessionId;
-        const testRes = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
-          method: "POST",
-          headers: {
-            accept: "application/json, */*",
-            "content-type": "application/x-www-form-urlencoded",
-            origin: BASE_URL,
-            referer: `${BASE_URL}/index.php`,
-            "x-requested-with": "XMLHttpRequest",
-            cookie: `PHPSESSID=${sid}`,
-          },
-          body: "",
-        });
-        if (testRes.ok) {
-          const testData = await testRes.text();
-          if (testData.length > 10) {
-            console.log(`[reauth] ${store.name}: REBIND SUCCESS — session rebound to establishment`);
-            return { phpSessionId: sid, establishmentCode: estCode };
-          }
-        }
-      }
-      console.log(`[reauth] ${store.name}: rebind failed (${rebindData.auth?.[0]?.result || "no data"}), trying full login...`);
-    } catch (err) {
-      console.log(`[reauth] ${store.name}: rebind error (${err}), trying full login...`);
-    }
+  if (!estCode) {
+    console.log(`[reauth] ${store.name}: FAILED — could not determine establishment code`);
+    return null;
   }
 
-  // Strategy 2: Full login with dummy token, then empty token
-  console.log(`[reauth] ${store.name}: attempting full auth with code=${estCode}...`);
-
-  let result = await authenticateEstablishment(cred.email, cred.password, estCode, DUMMY_TOKEN);
-  if (!result.success) {
-    console.log(`[reauth] ${store.name}: dummy token failed (${result.error}), trying empty...`);
-    result = await authenticateEstablishment(cred.email, cred.password, estCode, "");
-  }
+  // Strategy 3: Full login
+  console.log(`[reauth] ${store.name}: full auth with code=${estCode}...`);
+  const result = await authenticateEstablishment(cred.email, cred.password, estCode, "");
 
   if (result.success && result.phpSessionId) {
-    console.log(`[reauth] ${store.name}: SUCCESS — new session obtained`);
+    console.log(`[reauth] ${store.name}: SUCCESS`);
     return { phpSessionId: result.phpSessionId, establishmentCode: estCode };
   }
 
