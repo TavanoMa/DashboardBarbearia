@@ -13,9 +13,24 @@ import {
  * GET /api/config
  * Returns list of configured stores (id + name only, no secrets).
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const sessions = await getActiveSessions();
   const credentials = await getCredentials();
+
+  const debug = request.nextUrl.searchParams.get("debug");
+  if (debug === "sessions") {
+    return NextResponse.json({
+      stores: sessions.map((s) => ({
+        id: s.id,
+        name: s.name,
+        cookiePreview: s.phpSessionId ? `${s.phpSessionId.slice(0, 6)}...${s.phpSessionId.slice(-4)}` : null,
+        cookiesMatch: sessions.length > 1 ? sessions[0].phpSessionId === sessions[1]?.phpSessionId : null,
+        appblzId: s.appblzId,
+        establishmentCode: s.establishmentCode,
+        lastVerified: s.lastVerified ? new Date(s.lastVerified).toISOString() : null,
+      })),
+    });
+  }
 
   return NextResponse.json({
     configured: sessions.length > 0 && !!sessions[0]?.phpSessionId,
