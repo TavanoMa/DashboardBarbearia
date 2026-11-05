@@ -12,6 +12,9 @@ interface HeaderProps {
   loading?: boolean;
   /** Hide store badge (e.g. on comparison page) */
   hideStore?: boolean;
+  hideDateRange?: boolean;
+  actions?: React.ReactNode;
+  subtitle?: string;
 }
 
 export default function Header({
@@ -21,6 +24,9 @@ export default function Header({
   lastUpdate,
   loading,
   hideStore,
+  hideDateRange,
+  actions,
+  subtitle,
 }: HeaderProps) {
   const { dataIni, dataFim, changePeriod, label } = useDateRange();
   const { currentStoreName, stores } = useStore();
@@ -37,8 +43,8 @@ export default function Header({
             </span>
           )}
         </div>
-        <p className="text-xs text-muted hidden sm:block">
-          {lastUpdate
+        <p className="text-xs text-muted hidden sm:block first-letter:uppercase">
+          {subtitle ? subtitle : lastUpdate
             ? `Atualizado ${lastUpdate.toLocaleTimeString("pt-BR")}`
             : label ||
               new Date().toLocaleDateString("pt-BR", {
@@ -75,6 +81,8 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-2 mt-2 sm:mt-0">
+        {actions}
+        {!hideDateRange && (
         <div className="flex items-center gap-2 bg-background rounded-lg px-3 py-1.5 border border-card-border flex-1 sm:flex-none">
           <input
             type="date"
@@ -90,6 +98,7 @@ export default function Header({
             className="bg-transparent text-sm outline-none w-full sm:w-[130px]"
           />
         </div>
+        )}
 
         <div className="hidden sm:flex items-center gap-2">
           {sessionActive !== undefined && (

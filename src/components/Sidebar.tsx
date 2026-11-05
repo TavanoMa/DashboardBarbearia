@@ -20,15 +20,21 @@ import {
   Building2,
   MapPin,
   ChevronDown,
+  Wallet,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/hooks/useStore";
+import { useFinanceiroLocal } from "@/hooks/useFinanceiroLocal";
+import type { ChaveTexto } from "@/lib/linguagem";
 
-const menuItems = [
+const menuItems: { href: string; label: string; icon: typeof Wallet; texto?: ChaveTexto }[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/geral", label: "Visão Geral", icon: Building2 },
   { href: "/agendamentos", label: "Agendamentos", icon: Calendar },
   { href: "/financeiro", label: "Financeiro", icon: DollarSign },
+  { href: "/fluxo-caixa", label: "Fluxo de Caixa", icon: Wallet, texto: "menu_fluxo" },
+  { href: "/lancamentos", label: "Lançamentos", icon: ArrowLeftRight, texto: "menu_lanc" },
   { href: "/estoque", label: "Estoque", icon: Package },
   { href: "/resumo", label: "Resumo", icon: ClipboardList },
   { href: "/profissionais", label: "Profissionais", icon: Scissors },
@@ -45,6 +51,7 @@ export default function Sidebar() {
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { stores, currentStore, currentStoreName, setCurrentStore } = useStore();
+  const { t } = useFinanceiroLocal();
 
   useEffect(() => {
     setMobileOpen(false);
@@ -194,6 +201,7 @@ export default function Sidebar() {
             const isActive =
               pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
+            const label = item.texto ? t(item.texto) : item.label;
             return (
               <Link
                 key={item.href}
@@ -203,10 +211,10 @@ export default function Sidebar() {
                     ? "bg-accent text-sidebar-bg font-medium"
                     : "text-sidebar-text/70 hover:bg-white/5 hover:text-white"
                 }`}
-                title={collapsed ? item.label : undefined}
+                title={collapsed ? label : undefined}
               >
                 <item.icon size={20} className="shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && <span>{label}</span>}
               </Link>
             );
           })}
