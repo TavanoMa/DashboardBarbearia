@@ -36,6 +36,7 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useStore } from "@/hooks/useStore";
 import { useDateRange } from "@/hooks/useDateRange";
 import type { Agendamento } from "@/lib/types";
@@ -78,6 +79,7 @@ function buildStoreData(
 }
 
 export default function GeralPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { stores } = useStore();
   const { dataIni, dataFim } = useDateRange();
 
@@ -288,7 +290,7 @@ export default function GeralPage() {
               <MapPin size={18} className="text-accent" />
               Faturamento por Loja
             </h3>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
               <PieChart>
                 <Pie
                   data={pieData}
@@ -320,7 +322,7 @@ export default function GeralPage() {
               <Users size={18} className="text-accent" />
               Atendimentos por Loja
             </h3>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
               <BarChart data={barData} barGap={4}>
                 <CartesianGrid {...GRID_STYLE} />
                 <XAxis dataKey="loja" {...AXIS_STYLE} />
@@ -341,7 +343,7 @@ export default function GeralPage() {
               <TrendingUp size={18} className="text-accent" />
               Faturamento Diário
             </h3>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={300}>
               <LineChart data={dailyData}>
                 <CartesianGrid {...GRID_STYLE} />
                 <XAxis dataKey="label" {...AXIS_STYLE} />

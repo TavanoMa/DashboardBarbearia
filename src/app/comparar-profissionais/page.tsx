@@ -39,6 +39,7 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useStore } from "@/hooks/useStore";
 import { useDateRange } from "@/hooks/useDateRange";
 import type { Agendamento } from "@/lib/types";
@@ -340,6 +341,7 @@ function StatCompare({
 
 /* ========== MAIN PAGE ========== */
 export default function CompararProfissionaisPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { stores } = useStore();
   const { dataIni, dataFim } = useDateRange();
 
@@ -646,7 +648,7 @@ export default function CompararProfissionaisPage() {
                   <TrendingUp size={18} className="text-accent" />
                   Perfil Comparativo
                 </h3>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={300}>
                   <RadarChart data={radarData}>
                     <PolarGrid stroke={GRID_STROKE} />
                     <PolarAngleAxis
@@ -681,7 +683,7 @@ export default function CompararProfissionaisPage() {
                   <Scissors size={18} className="text-accent" />
                   Métricas Lado a Lado
                 </h3>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={300}>
                   <BarChart data={metricsChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                     <XAxis dataKey="metric" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -702,7 +704,7 @@ export default function CompararProfissionaisPage() {
                   <DollarSign size={18} className="text-success" />
                   Faturamento Diário
                 </h3>
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                   <LineChart data={dailyChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                     <XAxis dataKey="label" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -806,7 +808,7 @@ export default function CompararProfissionaisPage() {
                   <Calendar size={18} className="text-accent" />
                   Horários Mais Atendidos
                 </h3>
-                <ResponsiveContainer width="100%" height={240}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={240}>
                   <BarChart
                     data={(() => {
                       const allHours = new Set([

@@ -12,7 +12,6 @@ import {
   CAIXA_SEGURO,
   MARGEM_SEGURANCA,
   atrasados,
-  brl,
   calcControle,
   calcProjecao,
   calcRealizado,
@@ -28,15 +27,15 @@ import {
 
 type Aba = "realizado" | "projecao" | "controle";
 
-const num = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace("-", "−");
 const tomCaixa = (s: StatusCaixa) => (s === "Positivo" ? "pos" : s === "Negativo" ? "neg" : "neu");
 const tomNecessidade = (s: StatusNecessidade) => (s === "Ideal" ? "pos" : s === "Saudável" ? "warn" : "neg");
 const cor = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-muted");
 
 export default function FluxoCaixaPage() {
-  const { pronto, hoje, dados, t, op } = useFinanceiroLocal();
+  const { pronto, hoje, dados, t, op, cifra, cifraNum, ocultarValores } = useFinanceiroLocal();
   const [aba, setAba] = useState<Aba>("realizado");
   const [offset, setOffset] = useState(0);
+  const menos = (n: number) => `${ocultarValores ? "" : "−"}${cifraNum(n)}`;
 
   const calc = useMemo(() => {
     const periodo = mesRelativo(hoje, offset);
@@ -108,18 +107,18 @@ export default function FluxoCaixaPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card
             label={periodo.fechado ? t("c_saldo_fim") : t("c_saldo")}
-            valor={brl(calc.saldoFim)}
+            valor={cifra(calc.saldoFim)}
             sub={periodo.fechado ? `${t("c_fechado")} · ${ddmm(periodo.fim)}` : t("c_saldo_sub")}
             tom={calc.saldoFim >= 0 ? "pos" : "neg"}
           />
-          <Card label={t("c_entradas")} valor={brl(calc.totalEntradas)} sub={t("c_entradas_sub")} />
-          <Card label={t("c_saidas")} valor={brl(calc.totalSaidas)} sub={t("c_saidas_sub")} tom="neg" />
+          <Card label={t("c_entradas")} valor={cifra(calc.totalEntradas)} sub={t("c_entradas_sub")} />
+          <Card label={t("c_saidas")} valor={cifra(calc.totalSaidas)} sub={t("c_saidas_sub")} tom="neg" />
           {periodo.fechado ? (
-            <Card label={t("c_resultado")} valor={brl(resultadoMes)} sub={t("c_fechado")} tom={resultadoMes >= 0 ? "pos" : "neg"} />
+            <Card label={t("c_resultado")} valor={cifra(resultadoMes)} sub={t("c_fechado")} tom={resultadoMes >= 0 ? "pos" : "neg"} />
           ) : (
             <Card
               label={t("c_menor")}
-              valor={menor ? brl(menor.saldoProjetado) : "—"}
+              valor={menor ? cifra(menor.saldoProjetado) : "—"}
               sub={menor ? `${diaSemana(menor.data)}, ${ddmm(menor.data)} · ${menorSub}` : menorSub}
               tom={menor && menor.status !== "Ideal" ? "neg" : "pos"}
             />
@@ -134,9 +133,9 @@ export default function FluxoCaixaPage() {
                 {t("al_titulo")} {diaSemana(menor.data).toLowerCase()}, {ddmm(menor.data)}
               </p>
               <p className="text-muted">
-                {t("al_texto1")} <strong className="text-foreground font-mono">{brl(menor.saldoProjetado)}</strong>.{" "}
-                {t("al_texto2")} <strong className="text-foreground font-mono">{brl(menor.necessidade)}</strong>{" "}
-                {t("al_texto3")} ({brl(CAIXA_SEGURO)}).
+                {t("al_texto1")} <strong className="text-foreground font-mono">{cifra(menor.saldoProjetado)}</strong>.{" "}
+                {t("al_texto2")} <strong className="text-foreground font-mono">{cifra(menor.necessidade)}</strong>{" "}
+                {t("al_texto3")} ({cifra(CAIXA_SEGURO)}).
               </p>
             </div>
           </div>
@@ -152,7 +151,7 @@ export default function FluxoCaixaPage() {
                     <span>
                       {c.nome} <span className="text-xs text-muted">· {op(c.tipo)}</span>
                     </span>
-                    <span className="font-mono tabular-nums">{brl(c.saldo)}</span>
+                    <span className="font-mono tabular-nums">{cifra(c.saldo)}</span>
                   </div>
                   <div className="h-1.5 mt-1.5 rounded bg-foreground/5 overflow-hidden">
                     <div className="h-full bg-accent rounded" style={{ width: `${Math.max(0, (c.saldo / maiorConta) * 100)}%` }} />
@@ -161,18 +160,18 @@ export default function FluxoCaixaPage() {
               ))}
               <div className="flex justify-between text-sm font-semibold border-t border-card-border pt-2">
                 <span>{t("p_total")}</span>
-                <span className="font-mono tabular-nums">{brl(calc.contas.reduce((s, c) => s + c.saldo, 0))}</span>
+                <span className="font-mono tabular-nums">{cifra(calc.contas.reduce((s, c) => s + c.saldo, 0))}</span>
               </div>
             </div>
           </div>
           <div className="bg-card-bg border border-card-border rounded-xl p-4">
             <h3 className="text-sm font-semibold mb-3">{t("p_regras")}</h3>
             <dl className="space-y-2 text-sm">
-              <Regra label={t("r_min")} valor={brl(CAIXA_MINIMO)} />
+              <Regra label={t("r_min")} valor={cifra(CAIXA_MINIMO)} />
               <Regra label={t("r_margem")} valor={`${MARGEM_SEGURANCA * 100}%`} />
-              <Regra label={t("r_seguro")} valor={brl(CAIXA_SEGURO)} />
-              <Regra label={t("r_recatr")} valor={brl(calc.atrasados.receber)} alerta={calc.atrasados.receber > 0} />
-              <Regra label={t("r_pagatr")} valor={brl(calc.atrasados.pagar)} alerta={calc.atrasados.pagar > 0} />
+              <Regra label={t("r_seguro")} valor={cifra(CAIXA_SEGURO)} />
+              <Regra label={t("r_recatr")} valor={cifra(calc.atrasados.receber)} alerta={calc.atrasados.receber > 0} />
+              <Regra label={t("r_pagatr")} valor={cifra(calc.atrasados.pagar)} alerta={calc.atrasados.pagar > 0} />
             </dl>
           </div>
         </div>
@@ -207,21 +206,21 @@ export default function FluxoCaixaPage() {
                 <tr key={r.data} className={`border-b border-card-border/60 last:border-0 ${r.data === calc.hojeIso ? "bg-accent/10" : "hover:bg-foreground/[0.03]"}`}>
                   <Td>{ddmm(r.data)}</Td>
                   <Td muted>{r.data === calc.hojeIso ? t("hoje") : diaSemana(r.data)}</Td>
-                  <Td num>{num(r.saldoInicial)}</Td>
-                  <Td num className={cor(r.entradas)}>{num(r.entradas)}</Td>
-                  <Td num className={r.saidas ? "text-danger" : "text-muted"}>{r.saidas ? `−${num(r.saidas)}` : num(0)}</Td>
-                  <Td num className={cor(r.movimento)}>{num(r.movimento)}</Td>
-                  <Td num>{num(r.saldoFinal)}</Td>
+                  <Td num>{cifraNum(r.saldoInicial)}</Td>
+                  <Td num className={cor(r.entradas)}>{cifraNum(r.entradas)}</Td>
+                  <Td num className={r.saidas ? "text-danger" : "text-muted"}>{r.saidas ? menos(r.saidas) : cifraNum(0)}</Td>
+                  <Td num className={cor(r.movimento)}>{cifraNum(r.movimento)}</Td>
+                  <Td num>{cifraNum(r.saldoFinal)}</Td>
                   <Td><Pill tom={tomCaixa(r.status)}>{t(`s_${r.status}`)}</Pill></Td>
                 </tr>
               ))}
               <tr className="bg-foreground/[0.03] font-semibold border-t-2 border-card-border">
                 <Td colSpan={2}>{t(periodo.fechado ? "total_mes" : "total_real")}</Td>
-                <Td num>{num(calc.realizado[0]?.saldoInicial ?? 0)}</Td>
-                <Td num className="text-success">{num(calc.totalEntradas)}</Td>
-                <Td num className="text-danger">−{num(calc.totalSaidas)}</Td>
-                <Td num className={cor(calc.totalEntradas - calc.totalSaidas)}>{num(calc.totalEntradas - calc.totalSaidas)}</Td>
-                <Td num>{num(calc.saldoFim)}</Td>
+                <Td num>{cifraNum(calc.realizado[0]?.saldoInicial ?? 0)}</Td>
+                <Td num className="text-success">{cifraNum(calc.totalEntradas)}</Td>
+                <Td num className="text-danger">{menos(calc.totalSaidas)}</Td>
+                <Td num className={cor(calc.totalEntradas - calc.totalSaidas)}>{cifraNum(calc.totalEntradas - calc.totalSaidas)}</Td>
+                <Td num>{cifraNum(calc.saldoFim)}</Td>
                 <Td />
               </tr>
             </tbody>
@@ -243,19 +242,19 @@ export default function FluxoCaixaPage() {
                   <tr key={p.data} className={`border-b border-card-border/60 last:border-0 ${p.data === calc.hojeIso ? "bg-accent/10" : "hover:bg-foreground/[0.03]"}`}>
                     <Td>{ddmm(p.data)}</Td>
                     <Td muted>{p.data === calc.hojeIso ? t("hoje") : diaSemana(p.data)}</Td>
-                    <Td num className={cor(p.entradasPrevistas)}>{num(p.entradasPrevistas)}</Td>
-                    <Td num className={p.saidasPrevistas ? "text-danger" : "text-muted"}>{p.saidasPrevistas ? `−${num(p.saidasPrevistas)}` : num(0)}</Td>
-                    <Td num className={cor(p.resultado)}>{num(p.resultado)}</Td>
-                    <Td num>{num(p.saldoProjetado)}</Td>
+                    <Td num className={cor(p.entradasPrevistas)}>{cifraNum(p.entradasPrevistas)}</Td>
+                    <Td num className={p.saidasPrevistas ? "text-danger" : "text-muted"}>{p.saidasPrevistas ? menos(p.saidasPrevistas) : cifraNum(0)}</Td>
+                    <Td num className={cor(p.resultado)}>{cifraNum(p.resultado)}</Td>
+                    <Td num>{cifraNum(p.saldoProjetado)}</Td>
                     <Td><Pill tom={tomCaixa(p.status)}>{t(`s_${p.status}`)}</Pill></Td>
                   </tr>
                 ))}
                 <tr className="bg-foreground/[0.03] font-semibold border-t-2 border-card-border">
                   <Td colSpan={2}>{t("total_proj")}</Td>
-                  <Td num className="text-success">{num(calc.projecao.reduce((s, p) => s + p.entradasPrevistas, 0))}</Td>
-                  <Td num className="text-danger">−{num(calc.projecao.reduce((s, p) => s + p.saidasPrevistas, 0))}</Td>
-                  <Td num>{num(calc.projecao.reduce((s, p) => s + p.resultado, 0))}</Td>
-                  <Td num>{num(calc.projecao[calc.projecao.length - 1].saldoProjetado)}</Td>
+                  <Td num className="text-success">{cifraNum(calc.projecao.reduce((s, p) => s + p.entradasPrevistas, 0))}</Td>
+                  <Td num className="text-danger">{menos(calc.projecao.reduce((s, p) => s + p.saidasPrevistas, 0))}</Td>
+                  <Td num>{cifraNum(calc.projecao.reduce((s, p) => s + p.resultado, 0))}</Td>
+                  <Td num>{cifraNum(calc.projecao[calc.projecao.length - 1].saldoProjetado)}</Td>
                   <Td />
                 </tr>
               </tbody>
@@ -276,10 +275,10 @@ export default function FluxoCaixaPage() {
                 {calc.controle.map((c) => (
                   <tr key={c.data} className={`border-b border-card-border/60 last:border-0 ${c.data === calc.hojeIso ? "bg-accent/10" : "hover:bg-foreground/[0.03]"}`}>
                     <Td>{ddmm(c.data)} <span className="text-xs text-muted">{c.data === calc.hojeIso ? t("hoje") : diaSemana(c.data)}</span></Td>
-                    <Td num>{num(c.saldoProjetado)}</Td>
-                    <Td num className={c.emDeficit ? "text-danger" : "text-muted"}>{num(c.deficit)}</Td>
+                    <Td num>{cifraNum(c.saldoProjetado)}</Td>
+                    <Td num className={c.emDeficit ? "text-danger" : "text-muted"}>{cifraNum(c.deficit)}</Td>
                     <Td><Pill tom={c.emDeficit ? "neg" : "neu"}>{t(c.emDeficit ? "s_deficit" : "s_ok")}</Pill></Td>
-                    <Td num className={c.necessidade > 0 ? "text-danger" : "text-muted"}>{num(c.necessidade)}</Td>
+                    <Td num className={c.necessidade > 0 ? "text-danger" : "text-muted"}>{cifraNum(c.necessidade)}</Td>
                     <Td><Pill tom={tomNecessidade(c.status)}>{t(`s_${c.status}`)}</Pill></Td>
                   </tr>
                 ))}

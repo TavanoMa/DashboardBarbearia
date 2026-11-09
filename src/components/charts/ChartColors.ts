@@ -46,11 +46,15 @@ export const GRID_STYLE = {
   strokeDasharray: undefined as undefined,
 } as const;
 
+import { isOcultar, MASCARA } from "@/lib/ocultar";
+
 export function formatBRL(value: number): string {
+  if (isOcultar()) return `R$ ${MASCARA}`;
   return `R$ ${value.toFixed(2).replace(".", ",")}`;
 }
 
 export function formatBRLShort(value: number): string {
+  if (isOcultar()) return `R$ ${MASCARA}`;
   if (value >= 1000) return `R$${(value / 1000).toFixed(1)}k`;
   return `R$${value.toFixed(0)}`;
 }

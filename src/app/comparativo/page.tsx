@@ -34,6 +34,7 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useStore } from "@/hooks/useStore";
 import { useDateRange } from "@/hooks/useDateRange";
 import type { Agendamento } from "@/lib/types";
@@ -126,6 +127,7 @@ function buildMetrics(
 }
 
 export default function ComparativoPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { stores } = useStore();
   const { dataIni, dataFim } = useDateRange();
   const [storeData, setStoreData] = useState<StoreMetrics[]>([]);
@@ -376,7 +378,7 @@ export default function ComparativoPage() {
                 <BarChart3 size={18} className="text-accent" />
                 Comparação Geral
               </h3>
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                 <BarChart data={kpiComparison} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke={GRID_STYLE.stroke} />
                   <XAxis dataKey="label" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -398,7 +400,7 @@ export default function ComparativoPage() {
                   <DollarSign size={18} className="text-success" />
                   Faturamento Diário
                 </h3>
-                <ResponsiveContainer width="100%" height={320}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={320}>
                   <BarChart data={dailyComparison} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke={GRID_STYLE.stroke} />
                     <XAxis dataKey="label" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -426,7 +428,7 @@ export default function ComparativoPage() {
                   Profissionais por Faturamento
                 </h3>
                 {profComparison.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={profComparison.length * 48 + 30}>
+                  <ResponsiveContainer key={ocultarKey} width="100%" height={profComparison.length * 48 + 30}>
                     <BarChart data={profComparison} layout="vertical" margin={{ left: 0, right: 10 }}>
                       <CartesianGrid horizontal={false} stroke={GRID_STYLE.stroke} />
                       <XAxis type="number" tick={AXIS_STYLE} tickLine={false} axisLine={false} tickFormatter={formatBRLShort} />
@@ -453,7 +455,7 @@ export default function ComparativoPage() {
                   Serviços por Quantidade
                 </h3>
                 {serviceComparison.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={serviceComparison.length * 48 + 30}>
+                  <ResponsiveContainer key={ocultarKey} width="100%" height={serviceComparison.length * 48 + 30}>
                     <BarChart data={serviceComparison} layout="vertical" margin={{ left: 0, right: 10 }}>
                       <CartesianGrid horizontal={false} stroke={GRID_STYLE.stroke} />
                       <XAxis type="number" tick={AXIS_STYLE} tickLine={false} axisLine={false} allowDecimals={false} />
@@ -485,7 +487,7 @@ export default function ComparativoPage() {
                   </h3>
                   {s.formasPgto.length > 0 ? (
                     <div className="flex flex-col items-center">
-                      <ResponsiveContainer width="100%" height={200}>
+                      <ResponsiveContainer key={ocultarKey} width="100%" height={200}>
                         <PieChart>
                           <Pie
                             data={s.formasPgto}

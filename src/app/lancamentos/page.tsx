@@ -27,7 +27,6 @@ import {
 } from "@/lib/financeiro";
 
 const ITENS = ["Corte", "Corte + barba", "Barba", "Corte degradê", "Sobrancelha", "Pomada modeladora", "Óleo para barba", "Plano mensal"];
-const num = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const lerValor = (v: string) => {
   const n = parseFloat(v.replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
@@ -40,7 +39,7 @@ const thCls = "px-3 py-3 text-[11px] font-semibold uppercase tracking-wide text-
 const tdCls = "px-3 py-2.5 whitespace-nowrap";
 
 export default function LancamentosPage() {
-  const { pronto, hoje, dados, adicionar, remover, t, op } = useFinanceiroLocal();
+  const { pronto, hoje, dados, adicionar, remover, t, op, cifra, cifraNum } = useFinanceiroLocal();
   const hojeIso = isoDate(hoje);
   const inicioMesAtual = isoDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   const contasNomes = dados.contasBancarias.map((c) => c.nome);
@@ -175,23 +174,23 @@ export default function LancamentosPage() {
 
         {ehEntrada ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Card label={t("l_fat")} valor={brl(mes.fat)} sub={t("l_fat_sub")} />
-            <Card label={t("l_taxas")} valor={brl(mes.taxas)} sub={t("l_taxas_sub")} tom="neg" />
-            <Card label={t("l_liq")} valor={brl(mes.fat - mes.taxas)} sub={t("l_liq_sub")} tom="pos" />
-            <Card label={t("l_meta")} valor={brl(META_MENSAL)} sub={`${t("l_faltam")} ${brl(faltaMeta)} · ${pctMeta}% ${t("l_atingido")}`} />
+            <Card label={t("l_fat")} valor={cifra(mes.fat)} sub={t("l_fat_sub")} />
+            <Card label={t("l_taxas")} valor={cifra(mes.taxas)} sub={t("l_taxas_sub")} tom="neg" />
+            <Card label={t("l_liq")} valor={cifra(mes.fat - mes.taxas)} sub={t("l_liq_sub")} tom="pos" />
+            <Card label={t("l_meta")} valor={cifra(META_MENSAL)} sub={`${t("l_faltam")} ${cifra(faltaMeta)} · ${pctMeta}% ${t("l_atingido")}`} />
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Card label={t("ls_contas")} valor={brl(mes.contas)} sub={t("ls_contas_sub")} />
-            <Card label={t("ls_juros")} valor={brl(mes.juros)} sub={t("ls_juros_sub")} tom="neg" />
-            <Card label={t("ls_total")} valor={brl(mes.contas + mes.juros)} sub={t("ls_total_sub")} tom="neg" />
+            <Card label={t("ls_contas")} valor={cifra(mes.contas)} sub={t("ls_contas_sub")} />
+            <Card label={t("ls_juros")} valor={cifra(mes.juros)} sub={t("ls_juros_sub")} tom="neg" />
+            <Card label={t("ls_total")} valor={cifra(mes.contas + mes.juros)} sub={t("ls_total_sub")} tom="neg" />
             <div className="bg-card-bg border border-card-border rounded-xl p-4 min-w-0">
               <p className="text-xs text-muted">{t("ls_resp")}</p>
               <dl className="mt-1.5 space-y-1 text-sm">
                 {mes.porResp.map((r) => (
                   <div key={r.nome} className="flex justify-between gap-2">
                     <dt className="text-muted truncate">{op(r.nome)}</dt>
-                    <dd className="font-mono tabular-nums whitespace-nowrap">{brl(r.total)}</dd>
+                    <dd className="font-mono tabular-nums whitespace-nowrap">{cifra(r.total)}</dd>
                   </div>
                 ))}
               </dl>
@@ -338,9 +337,9 @@ export default function LancamentosPage() {
                         <td className={`${tdCls} text-muted`}>{op(l.categoria)}</td>
                         <td className={tdCls}>{l.item}</td>
                         <td className={`${tdCls} max-w-[160px] truncate`}>{l.cliente || "—"}</td>
-                        <td className={`${tdCls} text-right font-mono`}>{num(l.valorCobranca)}</td>
-                        <td className={`${tdCls} text-right font-mono ${l.taxa ? "text-danger" : "text-muted"}`}>{num(l.taxa)}</td>
-                        <td className={`${tdCls} text-right font-mono text-success`}>{num(valorLiquido(l))}</td>
+                        <td className={`${tdCls} text-right font-mono`}>{cifraNum(l.valorCobranca)}</td>
+                        <td className={`${tdCls} text-right font-mono ${l.taxa ? "text-danger" : "text-muted"}`}>{cifraNum(l.taxa)}</td>
+                        <td className={`${tdCls} text-right font-mono text-success`}>{cifraNum(valorLiquido(l))}</td>
                         <td className={`${tdCls} text-muted`}>{l.forma}</td>
                         <td className={`${tdCls} text-muted`}>{op(l.canal)}</td>
                         <td className={`${tdCls} text-muted`}>{l.conta}</td>
@@ -375,9 +374,9 @@ export default function LancamentosPage() {
                         <td className={`${tdCls} max-w-[200px] truncate`}>{l.descricao}</td>
                         <td className={`${tdCls} text-muted`}>{op(l.categoria)}</td>
                         <td className={`${tdCls} text-muted max-w-[180px] truncate`}>{l.tipoSaida}</td>
-                        <td className={`${tdCls} text-right font-mono`}>{num(l.valorConta)}</td>
-                        <td className={`${tdCls} text-right font-mono ${l.juros ? "text-danger" : "text-muted"}`}>{num(l.juros)}</td>
-                        <td className={`${tdCls} text-right font-mono text-danger`}>{num(valorPago(l))}</td>
+                        <td className={`${tdCls} text-right font-mono`}>{cifraNum(l.valorConta)}</td>
+                        <td className={`${tdCls} text-right font-mono ${l.juros ? "text-danger" : "text-muted"}`}>{cifraNum(l.juros)}</td>
+                        <td className={`${tdCls} text-right font-mono text-danger`}>{cifraNum(valorPago(l))}</td>
                         <td className={`${tdCls} text-muted`}>{l.forma}</td>
                         <td className={`${tdCls} text-muted`}>{op(l.responsavel)}</td>
                         <td className={`${tdCls} text-muted`}>{op(l.impacto)}</td>
@@ -397,15 +396,15 @@ export default function LancamentosPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {ehEntrada ? (
                 <>
-                  <Quebra titulo={t("b_cat_in")} itens={mes.porCatIn} op={op} />
-                  <Quebra titulo={t("b_forma")} itens={mes.porForma} op={(v) => v} />
-                  <Quebra titulo={t("b_canal")} itens={mes.porCanal} op={op} />
+                  <Quebra titulo={t("b_cat_in")} itens={mes.porCatIn} op={op} cifra={cifra} />
+                  <Quebra titulo={t("b_forma")} itens={mes.porForma} op={(v) => v} cifra={cifra} />
+                  <Quebra titulo={t("b_canal")} itens={mes.porCanal} op={op} cifra={cifra} />
                 </>
               ) : (
                 <>
-                  <Quebra titulo={t("b_categoria")} itens={mes.porCatOut} op={op} />
-                  <Quebra titulo={t("b_impacto")} itens={mes.porImpacto} op={op} />
-                  <Quebra titulo={t("b_gera")} itens={mes.porGera} op={(v) => v} />
+                  <Quebra titulo={t("b_categoria")} itens={mes.porCatOut} op={op} cifra={cifra} />
+                  <Quebra titulo={t("b_impacto")} itens={mes.porImpacto} op={op} cifra={cifra} />
+                  <Quebra titulo={t("b_gera")} itens={mes.porGera} op={(v) => v} cifra={cifra} />
                 </>
               )}
             </div>
@@ -472,7 +471,7 @@ function Calculo({ label, formula, valor }: { label: string; formula: string; va
   );
 }
 
-function Quebra({ titulo, itens, op }: { titulo: string; itens: { nome: string; total: number }[]; op: (v: string) => string }) {
+function Quebra({ titulo, itens, op, cifra }: { titulo: string; itens: { nome: string; total: number }[]; op: (v: string) => string; cifra: (n: number) => string }) {
   const total = itens.reduce((s, i) => s + i.total, 0) || 1;
   return (
     <div className="bg-card-bg border border-card-border rounded-xl p-4 min-w-0">
@@ -483,7 +482,7 @@ function Quebra({ titulo, itens, op }: { titulo: string; itens: { nome: string; 
             <div className="flex justify-between gap-2">
               <span className="truncate">{op(i.nome)}</span>
               <span className="font-mono tabular-nums whitespace-nowrap">
-                {brl(i.total)} <span className="text-xs text-muted">{Math.round((i.total / total) * 100)}%</span>
+                {cifra(i.total)} <span className="text-xs text-muted">{Math.round((i.total / total) * 100)}%</span>
               </span>
             </div>
             <div className="h-1 mt-1 rounded bg-foreground/5 overflow-hidden">

@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "@/hooks/useStore";
 import { gerarExemplo, type DadosFinanceiros } from "@/lib/financeiro-exemplo";
-import type { Lancamento } from "@/lib/financeiro";
+import { brl, type Lancamento } from "@/lib/financeiro";
 import { OPCOES_BARBEIRO, TEXTOS, type ChaveTexto } from "@/lib/linguagem";
+import { MASCARA, setOcultar, useOcultarValores } from "@/lib/ocultar";
 
 interface FinanceiroContextValue {
   pronto: boolean;
@@ -14,12 +15,17 @@ interface FinanceiroContextValue {
   remover: (id: string) => void;
   modoBarbeiro: boolean;
   setModoBarbeiro: (v: boolean) => void;
+  ocultarValores: boolean;
+  setOcultarValores: (v: boolean) => void;
+  cifra: (n: number) => string;
+  cifraNum: (n: number) => string;
   t: (k: ChaveTexto) => string;
   op: (valor: string) => string;
 }
 
 const VAZIO: DadosFinanceiros = { contasBancarias: [], lancamentos: [], contasPrevistas: [] };
 const CHAVE_MODO = "cacique_modo_barbeiro";
+const numBr = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace("-", "−");
 const FinanceiroContext = createContext<FinanceiroContextValue | null>(null);
 
 // localStorage com fallback em memória (aba anônima / armazenamento bloqueado)
@@ -69,6 +75,7 @@ export function FinanceiroProvider({ children }: { children: ReactNode }) {
   const rawModo = useSyncExternalStore(assinar, () => ler(CHAVE_MODO), () => null);
   const rawMeus = useSyncExternalStore(assinar, () => ler(chaveLoja), () => null);
   const modoBarbeiro = rawModo === "true";
+  const ocultarValores = useOcultarValores();
 
   const base = useMemo(
     () => (lojaCarregando ? VAZIO : gerarExemplo(hoje, currentStore)),
@@ -89,13 +96,16 @@ export function FinanceiroProvider({ children }: { children: ReactNode }) {
     [chaveLoja]
   );
   const setModoBarbeiro = useCallback((v: boolean) => gravar(CHAVE_MODO, v), []);
+  const setOcultarValores = useCallback((v: boolean) => setOcultar(v), []);
 
+  const cifra = useCallback((n: number) => (ocultarValores ? `R$ ${MASCARA}` : brl(n)), [ocultarValores]);
+  const cifraNum = useCallback((n: number) => (ocultarValores ? MASCARA : numBr(n)), [ocultarValores]);
   const t = useCallback((k: ChaveTexto) => TEXTOS[k][modoBarbeiro ? 1 : 0], [modoBarbeiro]);
   const op = useCallback((v: string) => (modoBarbeiro ? OPCOES_BARBEIRO[v] ?? v : v), [modoBarbeiro]);
 
   return (
     <FinanceiroContext.Provider
-      value={{ pronto: !lojaCarregando, hoje, dados, adicionar, remover, modoBarbeiro, setModoBarbeiro, t, op }}
+      value={{ pronto: !lojaCarregando, hoje, dados, adicionar, remover, modoBarbeiro, setModoBarbeiro, ocultarValores, setOcultarValores, cifra, cifraNum, t, op }}
     >
       {children}
     </FinanceiroContext.Provider>

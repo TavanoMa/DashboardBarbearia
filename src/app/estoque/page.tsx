@@ -31,10 +31,12 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useEstoque } from "@/hooks/useEstoque";
 import type { ProdutoEstoque } from "@/app/api/estoque/route";
 
 export default function EstoquePage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { data, loading, error, refresh } = useEstoque();
   const [modal, setModal] = useState<{
     title: string;
@@ -240,7 +242,7 @@ export default function EstoquePage() {
                 Produtos por Categoria
               </h3>
               <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer key={ocultarKey} width="100%" height="100%">
                   <PieChart>
                     <Tooltip content={<DonutTooltip />} />
                     <Pie
@@ -278,7 +280,7 @@ export default function EstoquePage() {
                 Top 10 - Valor em Estoque
               </h3>
               <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer key={ocultarKey} width="100%" height="100%">
                   <BarChart
                     data={top10Valor}
                     layout="vertical"

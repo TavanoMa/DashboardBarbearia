@@ -33,6 +33,7 @@ import {
   CATEGORICAL,
   formatBRL,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useAgendamentos } from "@/hooks/useAgendamentos";
 import { calcularMetricas } from "@/lib/parser";
 import type { Agendamento } from "@/lib/types";
@@ -47,6 +48,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_KEYS = ["realizado", "agendado", "cancelado", "ausente"] as const;
 
 export default function AgendamentosPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { agendamentos, bloqueados, loading, sessionActive, lastUpdate, refresh } =
     useAgendamentos({ autoRefreshMs: 60000 });
 
@@ -270,7 +272,7 @@ export default function AgendamentosPage() {
           {/* Agendamentos por Dia */}
           <div className="bg-card-bg border border-card-border rounded-xl p-5">
             <h3 className="font-semibold mb-4">Agendamentos por Dia</h3>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={300}>
               <BarChart data={porDia}>
                 <CartesianGrid stroke="#e5e7eb20" vertical={false} />
                 <XAxis
@@ -315,7 +317,7 @@ export default function AgendamentosPage() {
           {/* Agendamentos por Horario */}
           <div className="bg-card-bg border border-card-border rounded-xl p-5">
             <h3 className="font-semibold mb-4">Agendamentos por Horario</h3>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={300}>
               <AreaChart
                 data={porHorario}
                 onClick={(state) => {
@@ -362,7 +364,7 @@ export default function AgendamentosPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="bg-card-bg border border-card-border rounded-xl p-5">
             <h3 className="font-semibold mb-4">Tipos de Agendamento</h3>
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={250}>
               <PieChart>
                 <Pie
                   data={porTipo}

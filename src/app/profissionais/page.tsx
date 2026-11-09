@@ -35,6 +35,7 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useAgendamentos } from "@/hooks/useAgendamentos";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStore } from "@/hooks/useStore";
@@ -109,6 +110,7 @@ function DeltaBadge({ current, previous, format = "number" }: { current: number;
 }
 
 export default function ProfissionaisPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { agendamentos, loading, sessionActive, lastUpdate, refresh } =
     useAgendamentos({ autoRefreshMs: 0 });
   const { dataIni, dataFim } = useDateRange();
@@ -508,7 +510,7 @@ export default function ProfissionaisPage() {
                   {sparkData.length > 1 && (
                     <div className="mb-3">
                       <p className="text-xs text-muted mb-1">Faturamento diario</p>
-                      <ResponsiveContainer width="100%" height={40}>
+                      <ResponsiveContainer key={ocultarKey} width="100%" height={40}>
                         <LineChart data={sparkData}>
                           <Line type="monotone" dataKey="value" stroke={profColor} strokeWidth={1.5} dot={false} />
                         </LineChart>
@@ -538,7 +540,7 @@ export default function ProfissionaisPage() {
             {/* Ranking */}
             <div className="bg-card-bg border border-card-border rounded-xl p-5">
               <h3 className="font-semibold mb-4">Ranking de Faturamento</h3>
-              <ResponsiveContainer width="100%" height={profissionais.length * 52 + 20}>
+              <ResponsiveContainer key={ocultarKey} width="100%" height={profissionais.length * 52 + 20}>
                 <BarChart data={rankingData} layout="vertical" margin={{ top: 0, right: 80, left: 10, bottom: 0 }}>
                   <CartesianGrid horizontal={false} stroke={GRID_STROKE} />
                   <XAxis type="number" tickFormatter={formatBRLShort} tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -561,7 +563,7 @@ export default function ProfissionaisPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-card-bg border border-card-border rounded-xl p-5">
                 <h3 className="font-semibold mb-4">Atendimentos por Profissional</h3>
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                   <BarChart data={atendimentosData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                     <XAxis dataKey="nome" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -582,7 +584,7 @@ export default function ProfissionaisPage() {
 
               <div className="bg-card-bg border border-card-border rounded-xl p-5">
                 <h3 className="font-semibold mb-4">Faturamento por Profissional</h3>
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                   <BarChart data={faturamentoData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                     <XAxis dataKey="nome" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -619,7 +621,7 @@ export default function ProfissionaisPage() {
                         <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: CATEGORICAL[pi % CATEGORICAL.length] }} />
                         {prof.nome}
                       </p>
-                      <ResponsiveContainer width="100%" height={servicos.length * 34 + 10}>
+                      <ResponsiveContainer key={ocultarKey} width="100%" height={servicos.length * 34 + 10}>
                         <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
                           <CartesianGrid horizontal={false} stroke={GRID_STROKE} />
                           <XAxis type="number" tick={AXIS_STYLE} tickLine={false} axisLine={false} allowDecimals={false} />
@@ -645,7 +647,7 @@ export default function ProfissionaisPage() {
             {/* Distribuicao por Dia da Semana */}
             <div className="bg-card-bg border border-card-border rounded-xl p-5">
               <h3 className="font-semibold mb-4">Distribuicao por Dia da Semana</h3>
-              <ResponsiveContainer width="100%" height={320}>
+              <ResponsiveContainer key={ocultarKey} width="100%" height={320}>
                 <BarChart data={diaSemanaData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                   <XAxis dataKey="dia" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -677,7 +679,7 @@ export default function ProfissionaisPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-card-bg border border-card-border rounded-xl p-5">
                     <h3 className="font-semibold mb-4">Atendimentos: Atual vs Anterior</h3>
-                    <ResponsiveContainer width="100%" height={280}>
+                    <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                       <BarChart data={compChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                         <XAxis dataKey="nome" tick={AXIS_STYLE} tickLine={false} axisLine={false} />
@@ -693,7 +695,7 @@ export default function ProfissionaisPage() {
 
                   <div className="bg-card-bg border border-card-border rounded-xl p-5">
                     <h3 className="font-semibold mb-4">Faturamento: Atual vs Anterior</h3>
-                    <ResponsiveContainer width="100%" height={280}>
+                    <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                       <BarChart data={compFatChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} stroke={GRID_STROKE} />
                         <XAxis dataKey="nome" tick={AXIS_STYLE} tickLine={false} axisLine={false} />

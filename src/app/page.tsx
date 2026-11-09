@@ -40,6 +40,7 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useAgendamentos } from "@/hooks/useAgendamentos";
 import { useFinanceiro } from "@/hooks/useFinanceiro";
 import {
@@ -264,6 +265,7 @@ function AppointmentList({ items }: { items: Agendamento[] }) {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { agendamentos, loading, sessionActive, lastUpdate, refresh } =
     useAgendamentos({ autoRefreshMs: 60000 });
   const { data: finData } = useFinanceiro();
@@ -462,7 +464,7 @@ export default function DashboardPage() {
               Faturamento por Dia
             </h3>
             {dailyData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
                 <BarChart data={dailyData}>
                   <CartesianGrid
                     vertical={false}
@@ -585,7 +587,7 @@ export default function DashboardPage() {
             Faturamento por Horario
           </h3>
           {hourlyData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={280}>
               <LineChart data={hourlyData}>
                 <CartesianGrid
                   vertical={false}
@@ -643,7 +645,7 @@ export default function DashboardPage() {
               Top Profissionais
             </h3>
             {profData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={profData.length * 48 + 20}>
+              <ResponsiveContainer key={ocultarKey} width="100%" height={profData.length * 48 + 20}>
                 <BarChart data={profData} layout="vertical" margin={{ left: 0, right: 10 }}>
                   <CartesianGrid
                     horizontal={false}
@@ -696,7 +698,7 @@ export default function DashboardPage() {
               Top Servicos
             </h3>
             {servicoData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={servicoData.length * 48 + 20}>
+              <ResponsiveContainer key={ocultarKey} width="100%" height={servicoData.length * 48 + 20}>
                 <BarChart data={servicoData} layout="vertical" margin={{ left: 0, right: 10 }}>
                   <CartesianGrid
                     horizontal={false}
@@ -752,7 +754,7 @@ export default function DashboardPage() {
             </h3>
             {pgtoData.length > 0 ? (
               <div className="flex flex-col items-center">
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer key={ocultarKey} width="100%" height={220}>
                   <PieChart>
                     <Pie
                       data={pgtoData}

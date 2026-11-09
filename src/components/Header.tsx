@@ -3,6 +3,7 @@
 import { RefreshCw, Wifi, WifiOff, MapPin } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStore } from "@/hooks/useStore";
+import OcultarValoresToggle from "@/components/OcultarValoresToggle";
 
 interface HeaderProps {
   title?: string;
@@ -81,6 +82,7 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-2 mt-2 sm:mt-0">
+        <OcultarValoresToggle />
         {actions}
         {!hideDateRange && (
         <div className="flex items-center gap-2 bg-background rounded-lg px-3 py-1.5 border border-card-border flex-1 sm:flex-none">

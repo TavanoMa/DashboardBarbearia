@@ -28,6 +28,7 @@ import {
   TOOLTIP_STYLE,
   formatBRL,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useAgendamentos } from "@/hooks/useAgendamentos";
 import type { Agendamento } from "@/lib/types";
 
@@ -45,6 +46,7 @@ interface ClienteResumo {
 }
 
 export default function ClientesPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { agendamentos, loading, sessionActive, lastUpdate, refresh } =
     useAgendamentos({ autoRefreshMs: 0 });
   const [busca, setBusca] = useState("");
@@ -310,7 +312,7 @@ export default function ClientesPage() {
           {/* Top 10 Clientes por Gasto */}
           <div className="bg-card-bg border border-card-border rounded-xl p-5">
             <h3 className="font-semibold mb-4">Top 10 Clientes por Gasto</h3>
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={350}>
               <BarChart data={top10Gasto} layout="vertical">
                 <CartesianGrid
                   stroke="#e5e7eb20"
@@ -361,7 +363,7 @@ export default function ClientesPage() {
           {/* Frequencia de Visitas */}
           <div className="bg-card-bg border border-card-border rounded-xl p-5">
             <h3 className="font-semibold mb-4">Frequencia de Visitas</h3>
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={350}>
               <BarChart data={freqVisitas}>
                 <CartesianGrid stroke="#e5e7eb20" vertical={false} />
                 <XAxis
@@ -424,7 +426,7 @@ export default function ClientesPage() {
           {/* Donut */}
           <div className="bg-card-bg border border-card-border rounded-xl p-5">
             <h3 className="font-semibold mb-4">Novos vs Recorrentes</h3>
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer key={ocultarKey} width="100%" height={250}>
               <PieChart>
                 <Pie
                   data={novosVsRecorrentes}

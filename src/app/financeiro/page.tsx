@@ -34,6 +34,7 @@ import {
   formatBRL,
   formatBRLShort,
 } from "@/components/charts/ChartColors";
+import { useOcultarValores } from "@/lib/ocultar";
 import { useFinanceiro } from "@/hooks/useFinanceiro";
 import { agruparTransacoesPorDia } from "@/lib/parser";
 
@@ -48,6 +49,7 @@ function pgtoIcon(forma: string): string {
 }
 
 export default function FinanceiroPage() {
+  const ocultarKey = useOcultarValores() ? "oculto" : "visivel"; // re-renderiza a página e força os gráficos a recalcular quando o olho muda
   const { data, loading, error, refresh } = useFinanceiro();
   const [modal, setModal] = useState<{
     title: string;
@@ -468,7 +470,7 @@ export default function FinanceiroPage() {
               Faturamento por Dia
             </h3>
             <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer key={ocultarKey} width="100%" height="100%">
                 <BarChart
                   data={porDia}
                   margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
@@ -516,7 +518,7 @@ export default function FinanceiroPage() {
             </h3>
             {grafico.length > 1 ? (
               <div className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer key={ocultarKey} width="100%" height="100%">
                   <BarChart
                     data={grafico}
                     margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
@@ -610,7 +612,7 @@ export default function FinanceiroPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Left: Horizontal Bar Chart */}
               <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer key={ocultarKey} width="100%" height="100%">
                   <BarChart
                     data={formaBarData}
                     layout="vertical"
@@ -657,7 +659,7 @@ export default function FinanceiroPage() {
 
               {/* Right: Donut Chart */}
               <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer key={ocultarKey} width="100%" height="100%">
                   <PieChart>
                     <Tooltip content={<DonutTooltip />} />
                     <Pie
