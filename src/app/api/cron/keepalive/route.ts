@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { keepAliveSessions } from "@/lib/appbarber-auth";
 
+// Cada loja pode levar até 3 tentativas de 8s (em paralelo entre as lojas).
+export const maxDuration = 60;
+
+/**
+ * Por quanto tempo uma queda devolve 503.
+ *
+ * O 503 existe para o cron externo (cron-job.org / UptimeRobot) mandar o email
+ * de alerta. Mas esses serviços DESATIVAM o job depois de muitas falhas
+ * seguidas — e aí o ping para, e as sessões que forem consertadas depois
+ * expiram por inatividade sem ninguém avisar. Por isso o 503 só dura a
+ * primeira meia hora da queda; depois volta 200 com ok:false no corpo.
+ */
+const ALERT_WINDOW_MS = 30 * 60 * 1000;
+
 /**
  * GET /api/cron/keepalive
  *
- * Called by external cron (cron-job.org every 5 min) to keep PHP sessions alive.
- * Returns 503 when any session is down so cron-job.org sends email alert.
+ * Chamado pelo cron externo a cada 5 min. Faz uma requisição com o cookie de
+ * cada loja — é isso que impede o AppBarber de expirar a sessão por inatividade.
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -16,39 +30,39 @@ export async function GET(request: NextRequest) {
 
   try {
     const results = await keepAliveSessions();
+    const now = Date.now();
 
     if (results.length === 0) {
       return NextResponse.json(
-        { ok: false, v: 5, timestamp: new Date().toISOString(), error: "Nenhuma loja configurada" },
+        { ok: false, v: 6, timestamp: new Date(now).toISOString(), error: "Nenhuma loja configurada" },
         { status: 503 }
       );
     }
 
-    const allActive = results.every((r) => r.status === "active");
-    const deadStores = results.filter((r) => r.status === "dead");
-    const unboundStores = results.filter((r) => r.status === "alive");
-    const reauthedStores = results.filter((r) => r.reauthed);
-    const failedStores = [...deadStores, ...unboundStores];
+    const down = results.filter((r) => r.status !== "active");
+    const downSince = down.length > 0 ? Math.min(...down.map((r) => r.statusSince)) : null;
+    const alerting = downSince !== null && now - downSince < ALERT_WINDOW_MS;
 
     const body = {
-      ok: allActive,
-      v: 5,
-      timestamp: new Date().toISOString(),
-      stores: results,
-      ...(reauthedStores.length > 0 && {
-        reauthed: `Sessões re-autenticadas: ${reauthedStores.map((s) => s.name).join(", ")}`,
-      }),
-      ...(failedStores.length > 0 && {
-        alert: `SESSÃO CAIU: ${failedStores.map((s) => `${s.name} (${s.status})`).join(", ")}. Reconfigure em /configuracoes`,
+      ok: down.length === 0,
+      v: 6,
+      timestamp: new Date(now).toISOString(),
+      stores: results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        alive: r.alive,
+        since: new Date(r.statusSince).toISOString(),
+        ...(r.reason ? { reason: r.reason } : {}),
+      })),
+      ...(down.length > 0 && {
+        alert: `SESSÃO CAIU: ${down
+          .map((s) => `${s.name} (${s.status}${s.reason ? ` — ${s.reason}` : ""})`)
+          .join(", ")}. Reconfigure em /configuracoes`,
       }),
     };
 
-    // Return 503 when any session is not active — triggers cron-job.org email alert
-    if (!allActive) {
-      return NextResponse.json(body, { status: 503 });
-    }
-
-    return NextResponse.json(body);
+    return NextResponse.json(body, { status: alerting ? 503 : 200 });
   } catch (err) {
     console.error("Keepalive error:", err);
     return NextResponse.json(

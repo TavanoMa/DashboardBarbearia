@@ -25,6 +25,7 @@ interface StoreStatus {
   id: string;
   name: string;
   connected: boolean;
+  status?: "active" | "alive" | "dead";
   lastVerified: string | null;
 }
 
@@ -315,22 +316,40 @@ export default function ConfiguracoesPage() {
                           ? `Verificado: ${new Date(store.lastVerified).toLocaleString("pt-BR")}`
                           : "Não verificado"}
                       </p>
+                      {store.status === "alive" && (
+                        <p className="text-xs text-warning mt-0.5">
+                          Conectado, mas sem dados — faça o login novo abaixo para reconectar a loja.
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <div
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                      store.connected
-                        ? "bg-success/10 text-success"
-                        : "bg-danger/10 text-danger"
-                    }`}
-                  >
-                    {store.connected ? (
-                      <Wifi size={12} />
-                    ) : (
-                      <WifiOff size={12} />
-                    )}
-                    {store.connected ? "Online" : "Offline"}
-                  </div>
+                  {(() => {
+                    // 3 estados reais do crachá:
+                    //  active = responde e traz dados → verde
+                    //  alive  = responde mas vem vazio (crachá solto) → amarelo
+                    //  dead   = não responde → vermelho
+                    const estado = store.status ?? (store.connected ? "active" : "dead");
+                    const visual =
+                      estado === "active"
+                        ? { cls: "bg-success/10 text-success", Icon: Wifi, label: "Online" }
+                        : estado === "alive"
+                          ? { cls: "bg-warning/15 text-warning", Icon: AlertCircle, label: "Sem dados" }
+                          : { cls: "bg-danger/10 text-danger", Icon: WifiOff, label: "Offline" };
+                    const { Icon } = visual;
+                    return (
+                      <div
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${visual.cls}`}
+                        title={
+                          estado === "alive"
+                            ? "O crachá responde mas veio vazio — faça o login novo para regrudar a loja."
+                            : undefined
+                        }
+                      >
+                        <Icon size={12} />
+                        {visual.label}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -491,7 +510,7 @@ export default function ConfiguracoesPage() {
                 <p className="text-sm font-medium mb-2">Como obter os cookies:</p>
                 <ol className="text-xs text-muted space-y-1.5 list-decimal list-inside">
                   <li>
-                    Acesse{" "}
+                    Abra uma <strong>janela anônima</strong>, acesse{" "}
                     <a
                       href="https://sistema.appbarber.com.br"
                       target="_blank"
@@ -500,18 +519,25 @@ export default function ConfiguracoesPage() {
                     >
                       sistema.appbarber.com.br
                     </a>{" "}
-                    e faça login na <strong>primeira loja</strong>
+                    e faça login na <strong>primeira loja</strong> — assim o
+                    dashboard fica com uma sessão só dele
                   </li>
                   <li>
                     Pressione F12 → Aba <strong>Application</strong> →{" "}
                     <strong>Cookies</strong>
                   </li>
                   <li>
-                    Copie o valor de <strong>PHPSESSID</strong>
+                    Copie o valor de <strong>PHPSESSID</strong> e cole na Loja 1
                   </li>
                   <li>
-                    Para a segunda loja, abra uma <strong>aba anônima</strong>,
-                    logue, e copie o novo PHPSESSID
+                    Para a segunda loja, feche essa janela, abra{" "}
+                    <strong>outra janela anônima</strong>, logue e copie o novo
+                    PHPSESSID
+                  </li>
+                  <li>
+                    <strong>Nunca clique em &quot;Sair&quot;</strong> no AppBarber
+                    depois de copiar — sair encerra a sessão e o cookie para de
+                    funcionar. Apenas feche a janela.
                   </li>
                 </ol>
               </div>

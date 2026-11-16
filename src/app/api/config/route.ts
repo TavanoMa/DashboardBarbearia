@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getActiveSessions,
+  loadSessionsFresh,
   mergeAndSaveSessions,
   saveSessions,
   getCredentials,
@@ -129,7 +130,8 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const sessions = await getActiveSessions();
+    // Direto do KV: regravar a partir do cache poderia devolver um cookie velho às outras lojas
+    const sessions = await loadSessionsFresh();
     const filtered = sessions.filter((s) => s.id !== storeId);
 
     if (filtered.length === sessions.length) {

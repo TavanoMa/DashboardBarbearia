@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getActiveSessions,
-  testSession,
+  probeSession,
   getCredentials,
 } from "@/lib/appbarber-auth";
 
@@ -29,15 +29,20 @@ export async function GET() {
     // Test each session in parallel
     const storeStatuses = await Promise.all(
       sessions.map(async (store) => {
-        const status = await testSession(store.phpSessionId);
+        const { status, reason } = await probeSession(store.phpSessionId);
         return {
           id: store.id,
           name: store.name,
           connected: status !== "dead",
           status,
-          lastVerified: store.lastVerified
-            ? new Date(store.lastVerified).toISOString()
-            : null,
+          reason,
+          // Acabamos de testar: se respondeu, a verificação é de agora.
+          lastVerified:
+            status !== "dead"
+              ? new Date().toISOString()
+              : store.lastVerified
+                ? new Date(store.lastVerified).toISOString()
+                : null,
         };
       })
     );

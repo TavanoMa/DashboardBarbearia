@@ -18,6 +18,8 @@ export interface Establishment {
   name: string;
 }
 
+export type SessionStatus = "active" | "alive" | "dead";
+
 export interface StoreSessions {
   id: string;
   name: string;
@@ -25,6 +27,8 @@ export interface StoreSessions {
   appblzId: string;
   establishmentCode?: string; // AppBarber establishment code for re-auth
   lastVerified?: number; // timestamp
+  lastStatus?: SessionStatus; // resultado do último keepalive
+  statusSince?: number; // desde quando está em lastStatus
 }
 
 export interface CredentialSet {
@@ -38,10 +42,11 @@ export interface KeepAliveLogEntry {
   stores: Array<{
     id: string;
     name: string;
-    status: "active" | "alive" | "dead";
-    prevStatus?: "active" | "alive" | "dead";
+    status: SessionStatus;
+    prevStatus?: SessionStatus;
     changed: boolean;
-    reauthed?: boolean;
+    reauthed?: boolean; // só em entradas antigas (a re-autenticação automática foi removida)
+    reason?: string; // por que não está "active"
   }>;
 }
 
@@ -71,7 +76,10 @@ interface AuthResponse {
 
 let sessionCache: StoreSessions[] = [];
 let cacheTimestamp = 0;
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+// Curto de propósito: cada instância serverless tem a própria cópia. Com 30 min,
+// uma instância continuava servindo (e regravando) o cookie antigo depois que
+// outra salvava um novo.
+const CACHE_TTL = 60 * 1000; // 1 minuto
 
 // ---------------------------------------------------------------------------
 // Storage layer — Vercel KV (production) or file (local dev)
@@ -107,6 +115,17 @@ async function kvGet<T>(key: string): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Igual a kvGet, mas NÃO engole erro: se o KV está configurado e a leitura
+ * falha, lança. Usado onde "não consegui ler" não pode virar "não tem nada"
+ * (senão uma falha passageira do KV apagaria as lojas ao regravar).
+ */
+async function kvGetStrict<T>(key: string): Promise<T | null> {
+  if (!isKvAvailable()) return null;
+  const { kv } = await import("@vercel/kv");
+  return await kv.get<T>(key);
 }
 
 async function kvSet<T>(key: string, value: T): Promise<void> {
@@ -295,11 +314,14 @@ export async function discoverEstablishments(
       return { success: false, error: data.auth[0]?.result || "Erro de autenticação" };
     }
 
-    if (phpSessionId) {
+    // Só é login de verdade se o AppBarber NÃO devolveu erro. O PHP manda um
+    // PHPSESSID novo em qualquer resposta, inclusive quando o login falha —
+    // aceitar esse cookie era gravar uma sessão anônima (vazia) como se fosse boa.
+    if (!data.error && phpSessionId) {
       return { success: true, singleSession: { phpSessionId } };
     }
 
-    return { success: false, error: "Resposta inesperada do AppBarber" };
+    return { success: false, error: data.auth?.[0]?.result || "Resposta inesperada do AppBarber" };
   } catch (err) {
     return { success: false, error: `Erro de conexão: ${err}` };
   }
@@ -339,22 +361,10 @@ export async function authenticateEstablishment(
       return { success: true, phpSessionId };
     }
 
-    if (phpSessionId) {
-      const testRes = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
-        method: "POST",
-        headers: {
-          accept: "application/json, */*",
-          "content-type": "application/x-www-form-urlencoded",
-          origin: BASE_URL,
-          referer: `${BASE_URL}/index.php`,
-          "x-requested-with": "XMLHttpRequest",
-          cookie: `PHPSESSID=${phpSessionId}`,
-        },
-        body: "",
-      });
-      if (testRes.ok) {
-        return { success: true, phpSessionId };
-      }
+    // Resposta com erro: só aceita o cookie se ele comprovadamente traz dados
+    // da loja. Uma sessão anônima também responde 200, então "respondeu" não basta.
+    if (phpSessionId && (await testSession(phpSessionId)) === "active") {
+      return { success: true, phpSessionId };
     }
 
     return { success: false, error: data.auth?.[0]?.result || "Falha ao autenticar na loja" };
@@ -393,8 +403,9 @@ export async function mergeAndSaveSessions(
   newSessions: StoreSessions[],
   credentials?: { email: string; password: string; storeIds?: string[] }
 ) {
-  // Load existing sessions
-  const existing = await getActiveSessions();
+  // Load existing sessions — direto do KV, para não regravar por cima das
+  // outras lojas um cookie velho que estava no cache desta instância
+  const existing = await loadSessionsFresh();
 
   // Remove existing sessions for stores being re-authenticated
   const newIds = new Set(newSessions.map(s => s.id));
@@ -414,6 +425,22 @@ export async function mergeAndSaveSessions(
       credentials.storeIds || newSessions.map(s => s.id)
     );
   }
+}
+
+/**
+ * Lê as sessões direto da fonte (KV em produção, arquivo em dev), ignorando o
+ * cache em memória. Lança se o KV estiver configurado e a leitura falhar —
+ * quem vai regravar a lista precisa saber que não leu, em vez de receber [].
+ */
+export async function loadSessionsFresh(): Promise<StoreSessions[]> {
+  if (isKvAvailable()) {
+    const kvSessions = await kvGetStrict<StoreSessions[]>(KV_SESSIONS_KEY);
+    const list = Array.isArray(kvSessions) ? kvSessions : [];
+    sessionCache = list;
+    cacheTimestamp = Date.now();
+    return list;
+  }
+  return loadConfigFile().stores;
 }
 
 /**
@@ -461,14 +488,36 @@ export function getActiveSessionsSync(): StoreSessions[] {
   return [];
 }
 
+const PROBE_TIMEOUT_MS = 8000;
+
 /**
- * Test if a session is still valid and bound to an establishment.
- * Returns "active" if the session has real data, "alive" if the session
- * responds but with empty/unbound data, or "dead" if the session is expired.
+ * Campos do painel do AppBarber que só vêm preenchidos quando a sessão está
+ * logada E ligada a uma loja. Numa sessão anônima eles vêm vazios/zerados.
  */
-export async function testSession(phpSessionId: string): Promise<"active" | "alive" | "dead"> {
+const DASHBOARD_FIELDS = [
+  "TotalComandaPendentes",
+  "TotalRetorno",
+  "TotalClienteNovo",
+  "TotalContasReceber",
+  "TotalContasPagar",
+  "TotalUsuariosConectaramApp",
+];
+
+/**
+ * Testa uma sessão e diz POR QUE ela não está boa.
+ *   active = logada e ligada à loja (traz dados)
+ *   alive  = o AppBarber responde, mas a sessão não está ligada a loja nenhuma
+ *   dead   = sem resposta útil (AppBarber fora do ar, erro HTTP, tela de login)
+ *
+ * "dead" nem sempre é sessão morta: uma queda momentânea do AppBarber dá o
+ * mesmo resultado. Por isso ninguém pode trocar cookie com base nele.
+ */
+export async function probeSession(
+  phpSessionId: string
+): Promise<{ status: SessionStatus; reason?: string }> {
+  let res: Response;
   try {
-    const res = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
+    res = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
       method: "POST",
       headers: {
         accept: "application/json, */*",
@@ -479,37 +528,57 @@ export async function testSession(phpSessionId: string): Promise<"active" | "ali
         cookie: `PHPSESSID=${phpSessionId}`,
       },
       body: "",
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-
-    if (!res.ok) return "dead";
-    const text = await res.text();
-    if (text.includes("login") || text.includes("<html") || !text.trim()) return "dead";
-    try {
-      const json = JSON.parse(text);
-      if (!json.data || !Array.isArray(json.data)) return "dead";
-
-      // Check if the data is meaningful (has real dashboard values)
-      // An unbound session returns data with all fields empty/zero
-      const row = json.data[0] as Record<string, string> | undefined;
-      if (!row) return "alive"; // Empty data array — session exists but no dashboard data
-
-      // If key dashboard fields are all empty/zero, the session is probably unbound
-      const hasRealData = Object.entries(row).some(([key, val]) => {
-        if (key === "TotalComandaPendentes" || key === "TotalRetorno" ||
-            key === "TotalClienteNovo" || key === "TotalContasReceber" ||
-            key === "TotalContasPagar" || key === "TotalUsuariosConectaramApp") {
-          return val !== "" && val !== "0" && val !== undefined;
-        }
-        return false;
-      });
-
-      return hasRealData ? "active" : "alive";
-    } catch {
-      return "dead";
-    }
-  } catch {
-    return "dead";
+  } catch (err) {
+    const tipo = err instanceof Error ? err.name : "erro";
+    return { status: "dead", reason: `sem resposta do AppBarber (${tipo})` };
   }
+
+  if (!res.ok) return { status: "dead", reason: `AppBarber respondeu HTTP ${res.status}` };
+
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    return { status: "dead", reason: "resposta interrompida" };
+  }
+
+  if (!text.trim()) return { status: "dead", reason: "resposta vazia" };
+  if (text.includes("login") || text.includes("<html")) {
+    return { status: "dead", reason: "AppBarber devolveu a tela de login" };
+  }
+
+  let json: { data?: unknown };
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { status: "dead", reason: "resposta não é JSON" };
+  }
+  if (!json.data || !Array.isArray(json.data)) {
+    return { status: "dead", reason: "JSON sem a lista de dados" };
+  }
+
+  const row = json.data[0] as Record<string, unknown> | undefined;
+  if (!row) return { status: "alive", reason: "sessão sem loja (lista vazia)" };
+
+  const hasRealData = DASHBOARD_FIELDS.some((key) => {
+    const val = row[key];
+    return val !== undefined && val !== null && val !== "" && val !== "0" && val !== 0;
+  });
+
+  return hasRealData
+    ? { status: "active" }
+    : { status: "alive", reason: "sessão sem loja (contadores zerados)" };
+}
+
+/**
+ * Test if a session is still valid and bound to an establishment.
+ * Returns "active" if the session has real data, "alive" if the session
+ * responds but with empty/unbound data, or "dead" if the session is expired.
+ */
+export async function testSession(phpSessionId: string): Promise<SessionStatus> {
+  return (await probeSession(phpSessionId)).status;
 }
 
 /**
@@ -520,96 +589,108 @@ export async function isSessionAlive(phpSessionId: string): Promise<boolean> {
   return status !== "dead";
 }
 
+/** Repete o teste antes de concluir que a sessão não está boa (evita alarme falso). */
+async function probeSessionWithRetry(phpSessionId: string, attempts = 3) {
+  let last = await probeSession(phpSessionId);
+  for (let i = 1; i < attempts && last.status !== "active"; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    last = await probeSession(phpSessionId);
+  }
+  return last;
+}
+
+export interface KeepAliveResult {
+  id: string;
+  name: string;
+  alive: boolean;
+  status: SessionStatus;
+  prevStatus?: SessionStatus;
+  changed: boolean;
+  /** Desde quando a loja está neste status (ms). */
+  statusSince: number;
+  reason?: string;
+}
+
+// lastVerified é só informativo; regravar a cada ping gastaria KV à toa.
+const VERIFIED_WRITE_INTERVAL = 30 * 60 * 1000;
+
 /**
- * Keepalive: ping all sessions + persist updated timestamps + log changes.
+ * Keepalive: faz uma requisição com cada cookie (é isso que impede o AppBarber
+ * de expirar a sessão por inatividade) e registra o status.
+ *
+ * O que ele NÃO faz, de propósito: tentar logar de novo ou trocar o cookie.
+ * O login do AppBarber exige reCAPTCHA, então a "re-autenticação automática"
+ * que existia aqui nunca conseguia logar — mas a cada tentativa recebia um
+ * PHPSESSID anônimo e gravava por cima do cookie bom. Uma falha passageira de
+ * rede virava perda definitiva da sessão. Quem troca cookie agora é só o login
+ * manual (/configuracoes) ou o robô (scripts/refresh-appbarber-sessions.mjs).
  */
-export async function keepAliveSessions(): Promise<
-  Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean; hasEstCode?: boolean }>
-> {
-  const sessions = await getActiveSessions();
+export async function keepAliveSessions(): Promise<KeepAliveResult[]> {
+  // Direto do KV, nunca do cache em memória: uma instância com cache velho
+  // testaria (e depois regravaria) cookies que já foram substituídos.
+  const sessions = await loadSessionsFresh();
   if (sessions.length === 0) return [];
 
-  // Load previous log to detect status changes
-  const prevLog = await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
-  const lastEntry = prevLog.length > 0 ? prevLog[prevLog.length - 1] : null;
+  const probes = await Promise.all(sessions.map((s) => probeSessionWithRetry(s.phpSessionId)));
+  const now = Date.now();
 
-  const results: Array<{ id: string; name: string; alive: boolean; status: "active" | "alive" | "dead"; reauthed?: boolean; hasEstCode?: boolean }> = [];
-
-  for (const store of sessions) {
-    let status = await testSession(store.phpSessionId);
-    let reauthed = false;
-
-    // If session is unbound ("alive") or dead, try to re-authenticate
-    if (status !== "active") {
-      console.log(`[keepalive] ${store.name}: status=${status}, attempting reauth...`);
-      const newSession = await tryReauthStore(store);
-      if (newSession) {
-        // Update the session in our list
-        store.phpSessionId = newSession.phpSessionId;
-        store.lastVerified = Date.now();
-        if (newSession.establishmentCode) {
-          store.establishmentCode = newSession.establishmentCode;
-        }
-        // Re-test the new session
-        const newStatus = await testSession(newSession.phpSessionId);
-        console.log(`[keepalive] ${store.name}: reauth result=${newStatus}`);
-        if (newStatus === "active") {
-          status = "active";
-          reauthed = true;
-        }
-      }
-    }
-
-    results.push({
-      id: store.id, name: store.name, alive: status !== "dead", status, reauthed,
-      hasEstCode: !!store.establishmentCode,
-    });
-  }
-
-  // Build log entry — track status changes
-  const logStores = results.map((r) => {
-    const prev = lastEntry?.stores.find((s) => s.id === r.id);
-    const prevStatus = prev?.status;
+  const results: KeepAliveResult[] = sessions.map((s, i) => {
+    const { status, reason } = probes[i];
+    const changed = s.lastStatus !== status;
     return {
-      id: r.id,
-      name: r.name,
-      status: r.status,
-      prevStatus,
-      changed: prevStatus !== undefined && prevStatus !== r.status,
-      reauthed: r.reauthed || false,
+      id: s.id,
+      name: s.name,
+      alive: status !== "dead",
+      status,
+      prevStatus: s.lastStatus,
+      changed,
+      statusSince: changed ? now : s.statusSince ?? now,
+      reason,
     };
   });
 
-  const hasChanges = logStores.some((s) => s.changed);
+  const anyChanged = results.some((r) => r.changed);
+  const verifiedStale = sessions.some(
+    (s, i) => results[i].alive && now - (s.lastVerified ?? 0) > VERIFIED_WRITE_INTERVAL
+  );
 
-  // Always log changes or reauths; for stable states, log every ~1 hour
-  const hasReauths = logStores.some((s) => s.reauthed);
-  const shouldLog = hasChanges || hasReauths || prevLog.length === 0 || prevLog.length % 6 === 0;
-
-  if (shouldLog) {
-    const newEntry: KeepAliveLogEntry = {
-      timestamp: new Date().toISOString(),
-      stores: logStores,
-    };
-    // Keep last 100 entries (~16h of history at 10min intervals)
-    const updatedLog = [...prevLog.slice(-99), newEntry];
-    await kvSet(KV_KEEPALIVE_LOG_KEY, updatedLog);
+  if (anyChanged || verifiedStale) {
+    // Relê antes de gravar e só atualiza a loja cujo cookie é o mesmo que foi
+    // testado. Se alguém salvou um cookie novo nesse meio-tempo, ele fica intacto.
+    const current = await loadSessionsFresh();
+    const patched = current.map((c) => {
+      const idx = sessions.findIndex((s) => s.id === c.id && s.phpSessionId === c.phpSessionId);
+      if (idx === -1) return c;
+      const r = results[idx];
+      return {
+        ...c,
+        lastStatus: r.status,
+        statusSince: r.statusSince,
+        lastVerified: r.alive ? now : c.lastVerified,
+      };
+    });
+    await saveSessions(patched);
   }
 
-  const updatedSessions = sessions.map((s) => {
-    const result = results.find((r) => r.id === s.id);
-    return result?.alive ? { ...s, lastVerified: Date.now() } : s;
-  });
-
-  // Persist everywhere (includes new phpSessionIds from reauth)
-  sessionCache = updatedSessions;
-  cacheTimestamp = Date.now();
-  await kvSet(KV_SESSIONS_KEY, updatedSessions);
-  try {
-    const config = loadConfigFile();
-    config.stores = updatedSessions;
-    saveConfigFile(config);
-  } catch { /* ignore on Vercel */ }
+  if (anyChanged) {
+    try {
+      const prevLog = (await kvGetStrict<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY)) || [];
+      const entry: KeepAliveLogEntry = {
+        timestamp: new Date(now).toISOString(),
+        stores: results.map((r) => ({
+          id: r.id,
+          name: r.name,
+          status: r.status,
+          prevStatus: r.prevStatus,
+          changed: r.changed,
+          ...(r.reason ? { reason: r.reason } : {}),
+        })),
+      };
+      await kvSet(KV_KEEPALIVE_LOG_KEY, [...prevLog.slice(-99), entry]);
+    } catch (err) {
+      console.error("[keepalive] não consegui gravar o histórico:", err);
+    }
+  }
 
   return results;
 }
@@ -619,177 +700,6 @@ export async function keepAliveSessions(): Promise<
  */
 export async function getKeepAliveLog(): Promise<KeepAliveLogEntry[]> {
   return await kvGet<KeepAliveLogEntry[]>(KV_KEEPALIVE_LOG_KEY) || [];
-}
-
-// ---------------------------------------------------------------------------
-// Auto re-authentication
-// ---------------------------------------------------------------------------
-
-/**
- * Try to re-authenticate a store whose session is "alive" (unbound) or "dead".
- * Uses saved credentials + establishment code.
- * Returns the new phpSessionId if successful, null otherwise.
- */
-async function tryReauthStore(
-  store: StoreSessions
-): Promise<{ phpSessionId: string; establishmentCode?: string } | null> {
-  // Get credentials for this store
-  const allCreds = await getAllCredentials();
-  if (allCreds.length === 0) {
-    console.log(`[reauth] ${store.name}: no credentials found`);
-    return null;
-  }
-
-  // Find credential that matches this store, or use first available
-  const cred = allCreds.find((c) => c.storeIds.includes(store.id)) || allCreds[0];
-
-  let estCode = store.establishmentCode;
-
-  // Strategy 1: Use existing alive session cookie for discovery + rebind
-  // This may bypass reCAPTCHA since the session already exists
-  if (store.phpSessionId) {
-    console.log(`[reauth] ${store.name}: trying session-cookie approach (estCode=${estCode || "none"})...`);
-    try {
-      // Step A: If no estCode, try discovery with existing session cookie
-      if (!estCode) {
-        const discBody = new URLSearchParams();
-        discBody.append("login", cred.email);
-        discBody.append("senha", cred.password);
-        discBody.append("origem", "sistema.appbarber.com.br");
-        discBody.append("token", "");
-        discBody.append("showOrNotShowInfoDates", "true");
-
-        const discRes = await fetch(`${BASE_URL}/php/auth.php`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/x-www-form-urlencoded",
-            accept: "application/json, */*",
-            origin: BASE_URL,
-            referer: `${BASE_URL}/login.php`,
-            cookie: `PHPSESSID=${store.phpSessionId}`,
-          },
-          body: discBody.toString(),
-        });
-
-        const discData = await discRes.json() as AuthResponse;
-        console.log(`[reauth] ${store.name}: discovery response error=${discData.error}, code=${discData.error_action_code}, auth=${JSON.stringify(discData.auth?.map(a => ({ code: a.establishment_code, name: a.establishment_name, result: a.result })))}`);
-
-        if (discData.error && discData.error_action_code === 2 && discData.auth) {
-          const establishments = discData.auth
-            .filter((a) => a.establishment_code && a.establishment_name)
-            .map((a) => ({ code: a.establishment_code!, name: a.establishment_name! }));
-          const match = establishments.find(
-            (e) => slugify(e.name) === store.id || e.name.toLowerCase().includes(store.name.toLowerCase())
-          );
-          if (match) {
-            estCode = match.code;
-            console.log(`[reauth] ${store.name}: discovered code=${estCode} via session cookie`);
-          } else {
-            console.log(`[reauth] ${store.name}: no match in ${establishments.map(e => e.name).join(", ")}`);
-          }
-        } else if (!discData.error) {
-          // Might have got a direct session
-          const newCookie = discRes.headers.get("set-cookie") || "";
-          const newSid = extractPhpSessionId(newCookie);
-          if (newSid) {
-            console.log(`[reauth] ${store.name}: direct session from discovery`);
-            return { phpSessionId: newSid };
-          }
-        }
-      }
-
-      // Step B: If we have estCode now, try rebind with session cookie
-      if (estCode) {
-        const rebindBody = new URLSearchParams();
-        rebindBody.append("login", cred.email);
-        rebindBody.append("senha", cred.password);
-        rebindBody.append("origem", "sistema.appbarber.com.br");
-        rebindBody.append("establishment_code", estCode);
-        rebindBody.append("token", "");
-        rebindBody.append("showOrNotShowInfoDates", "true");
-
-        const rebindRes = await fetch(`${BASE_URL}/php/auth.php`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/x-www-form-urlencoded",
-            accept: "application/json, */*",
-            origin: BASE_URL,
-            referer: `${BASE_URL}/login.php`,
-            cookie: `PHPSESSID=${store.phpSessionId}`,
-          },
-          body: rebindBody.toString(),
-        });
-
-        const rebindData = await rebindRes.json() as AuthResponse;
-        const rebindCookie = rebindRes.headers.get("set-cookie") || "";
-        const rebindSid = extractPhpSessionId(rebindCookie);
-        const sid = rebindSid || store.phpSessionId;
-
-        console.log(`[reauth] ${store.name}: rebind response error=${rebindData.error}, newSid=${!!rebindSid}, result=${rebindData.auth?.[0]?.result || "none"}`);
-
-        if (!rebindData.error || rebindSid) {
-          const testRes = await fetch(`${BASE_URL}/pages/relatorios/buscaRelDashboard.php`, {
-            method: "POST",
-            headers: {
-              accept: "application/json, */*",
-              "content-type": "application/x-www-form-urlencoded",
-              origin: BASE_URL,
-              referer: `${BASE_URL}/index.php`,
-              "x-requested-with": "XMLHttpRequest",
-              cookie: `PHPSESSID=${sid}`,
-            },
-            body: "",
-          });
-          if (testRes.ok) {
-            const testText = await testRes.text();
-            if (testText.length > 10 && !testText.includes("<html")) {
-              console.log(`[reauth] ${store.name}: REBIND SUCCESS`);
-              return { phpSessionId: sid, establishmentCode: estCode };
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.log(`[reauth] ${store.name}: session-cookie approach error: ${err}`);
-    }
-  }
-
-  // Strategy 2: Standard discovery + auth (no session cookie)
-  if (!estCode) {
-    console.log(`[reauth] ${store.name}: standard discovery (no estCode yet)...`);
-    const discovery = await discoverEstablishments(cred.email, cred.password, "");
-    if (discovery.success && discovery.establishments) {
-      const match = discovery.establishments.find(
-        (e) => slugify(e.name) === store.id || e.name.toLowerCase().includes(store.name.toLowerCase())
-      );
-      if (match) {
-        estCode = match.code;
-        console.log(`[reauth] ${store.name}: discovered code=${estCode}`);
-      }
-    } else if (discovery.singleSession) {
-      console.log(`[reauth] ${store.name}: single establishment`);
-      return { phpSessionId: discovery.singleSession.phpSessionId };
-    } else {
-      console.log(`[reauth] ${store.name}: discovery failed: ${discovery.error}`);
-    }
-  }
-
-  if (!estCode) {
-    console.log(`[reauth] ${store.name}: FAILED — could not determine establishment code`);
-    return null;
-  }
-
-  // Strategy 3: Full login
-  console.log(`[reauth] ${store.name}: full auth with code=${estCode}...`);
-  const result = await authenticateEstablishment(cred.email, cred.password, estCode, "");
-
-  if (result.success && result.phpSessionId) {
-    console.log(`[reauth] ${store.name}: SUCCESS`);
-    return { phpSessionId: result.phpSessionId, establishmentCode: estCode };
-  }
-
-  console.log(`[reauth] ${store.name}: FAILED — ${result.error}`);
-  return null;
 }
 
 // ---------------------------------------------------------------------------
