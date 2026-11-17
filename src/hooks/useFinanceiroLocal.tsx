@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "@/hooks/useStore";
 import { gerarExemplo, type DadosFinanceiros } from "@/lib/financeiro-exemplo";
-import { brl, type Lancamento } from "@/lib/financeiro";
+import { brl, type ContaPrevista, type Lancamento } from "@/lib/financeiro";
 import { OPCOES_BARBEIRO, TEXTOS, type ChaveTexto } from "@/lib/linguagem";
 import { MASCARA, setOcultar, useOcultarValores } from "@/lib/ocultar";
 
@@ -13,6 +13,9 @@ interface FinanceiroContextValue {
   dados: DadosFinanceiros;
   adicionar: (l: Lancamento) => void;
   remover: (id: string) => void;
+  adicionarConta: (c: ContaPrevista) => void;
+  removerConta: (id: string) => void;
+  marcarPago: (id: string, pago: boolean) => void;
   modoBarbeiro: boolean;
   setModoBarbeiro: (v: boolean) => void;
   ocultarValores: boolean;
@@ -67,13 +70,24 @@ function lerLancamentos(chave: string): Lancamento[] {
   }
 }
 
+function lerContas(chave: string): ContaPrevista[] {
+  try {
+    const v = ler(chave);
+    return v ? (JSON.parse(v) as ContaPrevista[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function FinanceiroProvider({ children }: { children: ReactNode }) {
   const { currentStore, loading: lojaCarregando } = useStore();
   const [hoje] = useState(() => new Date());
   const chaveLoja = `cacique_fin_lancamentos_${currentStore || "padrao"}`;
+  const chaveContas = `cacique_fin_contas_${currentStore || "padrao"}`;
 
   const rawModo = useSyncExternalStore(assinar, () => ler(CHAVE_MODO), () => null);
   const rawMeus = useSyncExternalStore(assinar, () => ler(chaveLoja), () => null);
+  const rawContas = useSyncExternalStore(assinar, () => ler(chaveContas), () => null);
   const modoBarbeiro = rawModo === "true";
   const ocultarValores = useOcultarValores();
 
@@ -84,16 +98,36 @@ export function FinanceiroProvider({ children }: { children: ReactNode }) {
 
   const dados = useMemo(() => {
     let meus: Lancamento[] = [];
+    let minhasContas: ContaPrevista[] = [];
     try {
       meus = rawMeus ? (JSON.parse(rawMeus) as Lancamento[]) : [];
     } catch {}
-    return { ...base, lancamentos: [...meus, ...base.lancamentos] };
-  }, [base, rawMeus]);
+    try {
+      minhasContas = rawContas ? (JSON.parse(rawContas) as ContaPrevista[]) : [];
+    } catch {}
+    return {
+      ...base,
+      lancamentos: [...meus, ...base.lancamentos],
+      contasPrevistas: [...minhasContas, ...base.contasPrevistas],
+    };
+  }, [base, rawMeus, rawContas]);
 
   const adicionar = useCallback((l: Lancamento) => gravar(chaveLoja, [l, ...lerLancamentos(chaveLoja)]), [chaveLoja]);
   const remover = useCallback(
     (id: string) => gravar(chaveLoja, lerLancamentos(chaveLoja).filter((l) => l.id !== id)),
     [chaveLoja]
+  );
+  const adicionarConta = useCallback(
+    (c: ContaPrevista) => gravar(chaveContas, [{ ...c, usuario: true }, ...lerContas(chaveContas)]),
+    [chaveContas]
+  );
+  const removerConta = useCallback(
+    (id: string) => gravar(chaveContas, lerContas(chaveContas).filter((c) => c.id !== id)),
+    [chaveContas]
+  );
+  const marcarPago = useCallback(
+    (id: string, pago: boolean) => gravar(chaveContas, lerContas(chaveContas).map((c) => (c.id === id ? { ...c, pago } : c))),
+    [chaveContas]
   );
   const setModoBarbeiro = useCallback((v: boolean) => gravar(CHAVE_MODO, v), []);
   const setOcultarValores = useCallback((v: boolean) => setOcultar(v), []);
@@ -105,7 +139,7 @@ export function FinanceiroProvider({ children }: { children: ReactNode }) {
 
   return (
     <FinanceiroContext.Provider
-      value={{ pronto: !lojaCarregando, hoje, dados, adicionar, remover, modoBarbeiro, setModoBarbeiro, ocultarValores, setOcultarValores, cifra, cifraNum, t, op }}
+      value={{ pronto: !lojaCarregando, hoje, dados, adicionar, remover, adicionarConta, removerConta, marcarPago, modoBarbeiro, setModoBarbeiro, ocultarValores, setOcultarValores, cifra, cifraNum, t, op }}
     >
       {children}
     </FinanceiroContext.Provider>

@@ -6,6 +6,7 @@ import {
   diasNoMes,
   isoDate,
   saldoAntesDe,
+  taxaCartao,
   type ContaBancaria,
   type ContaPrevista,
   type Lancamento,
@@ -52,13 +53,13 @@ const CLIENTES = ["Pedro", "Lucas", "Rafael", "Diego", "Mateus", "Gabriel", "Bru
 const PAGAMENTOS_FIXOS: { dia: number; descricao: string; categoria: string; tipoSaida: string; valor: number; forma: string; impacto: string; geraReceita: boolean; responsavel?: string }[] = [
   { dia: 5, descricao: "Conta de luz", categoria: "Despesa Fixa", tipoSaida: "Energia elétrica (mínimo fixo)", valor: 420, forma: "Boleto", impacto: "Essencial", geraReceita: false },
   { dia: 5, descricao: "Internet", categoria: "Despesa Fixa", tipoSaida: "Internet", valor: 130, forma: "Boleto", impacto: "Essencial", geraReceita: false },
-  { dia: 8, descricao: "Anúncios no Instagram", categoria: "Despesa Comercial", tipoSaida: "Tráfego pago", valor: 600, forma: "Cartões", impacto: "Importante", geraReceita: true },
+  { dia: 8, descricao: "Anúncios no Instagram", categoria: "Despesa Comercial", tipoSaida: "Tráfego pago", valor: 600, forma: "Cartão Crédito", impacto: "Importante", geraReceita: true },
   { dia: 10, descricao: "Aluguel do salão", categoria: "Despesa Fixa", tipoSaida: "Aluguel", valor: 4500, forma: "Pix", impacto: "Essencial", geraReceita: false },
   { dia: 15, descricao: "Comissão dos barbeiros (1ª quinzena)", categoria: "Custo Operacional", tipoSaida: "Terceirização operacional", valor: 7000, forma: "Pix", impacto: "Essencial", geraReceita: true },
   { dia: 18, descricao: "Contabilidade", categoria: "Despesa Fixa", tipoSaida: "Contabilidade", valor: 450, forma: "Pix", impacto: "Essencial", geraReceita: false },
   { dia: 20, descricao: "Simples Nacional (DAS)", categoria: "Despesa Tributária", tipoSaida: "Simples Nacional / DAS", valor: 1800, forma: "Boleto", impacto: "Essencial", geraReceita: false },
   { dia: 22, descricao: "Café e lanches para clientes", categoria: "Despesa Variável", tipoSaida: "Insumos indiretos", valor: 280, forma: "Pix", impacto: "Supérfluo", geraReceita: false },
-  { dia: 25, descricao: "Sistema de agendamento", categoria: "Despesa Fixa", tipoSaida: "Sistemas / softwares (ERP, CRM, etc.)", valor: 189, forma: "Cartões", impacto: "Importante", geraReceita: true },
+  { dia: 25, descricao: "Sistema de agendamento", categoria: "Despesa Fixa", tipoSaida: "Sistemas / softwares (ERP, CRM, etc.)", valor: 189, forma: "Cartão Crédito", impacto: "Importante", geraReceita: true },
   { dia: 28, descricao: "Pró-labore", categoria: "Despesa Fixa", tipoSaida: "Pró-labore (Dono)", valor: 3500, forma: "Pix", impacto: "Essencial", geraReceita: false, responsavel: "Pessoal" },
   { dia: 30, descricao: "Comissão dos barbeiros (2ª quinzena)", categoria: "Custo Operacional", tipoSaida: "Terceirização operacional", valor: 7000, forma: "Pix", impacto: "Essencial", geraReceita: true },
 ];
@@ -81,9 +82,10 @@ export function gerarExemplo(hojeDate: Date, lojaId: string): DadosFinanceiros {
     { nome: "Dinheiro em espécie", tipo: "Caixa físico", saldoInicial: 600 },
   ];
   const hojeMeiaNoite = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), hojeDate.getDate()).getTime();
+  const ehCartao = (forma: string) => forma.startsWith("Cartão");
   // Cartão cai no banco em 2 dias; dinheiro da gaveta é depositado depois de uma semana.
   const contaDe = (forma: string, diasAtras: number) =>
-    forma === "Cartões"
+    ehCartao(forma)
       ? diasAtras < 2 ? "Maquininha" : "Nubank PJ"
       : forma === "Dinheiro" && diasAtras < 7
         ? "Dinheiro em espécie"
@@ -104,7 +106,7 @@ export function gerarExemplo(hojeDate: Date, lojaId: string): DadosFinanceiros {
       const qtd = Math.round(base * fator * (0.85 + r() * 0.3));
       for (let i = 0; i < qtd; i++) {
         const [categoria, item, preco] = SERVICOS[Math.floor(r() * SERVICOS.length)];
-        const forma = pick(r, [["Pix", 42], ["Cartões", 38], ["Dinheiro", 20]]);
+        const forma = pick(r, [["Pix", 42], ["Cartão Débito", 20], ["Cartão Crédito", 18], ["Dinheiro", 20]]);
         lancamentos.push({
           id: `ex-${n++}`,
           tipo: "entrada",
@@ -114,7 +116,7 @@ export function gerarExemplo(hojeDate: Date, lojaId: string): DadosFinanceiros {
           cliente: CLIENTES[Math.floor(r() * CLIENTES.length)],
           descricao: "",
           valorCobranca: preco,
-          taxa: forma === "Cartões" ? Math.round(preco * 0.032 * 100) / 100 : 0,
+          taxa: taxaCartao(forma, preco) ?? 0,
           forma,
           canal: pick(r, [["Recorrência", 45], ["Indicação", 20], ["Redes Sociais", 14], ["Balcão", 10], ["Plataformas", 6], ["Tráfego Pago", 5]]),
           conta: contaDe(forma, diasAtras),

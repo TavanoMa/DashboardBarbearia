@@ -22,6 +22,10 @@ import {
   ChevronDown,
   Wallet,
   ArrowLeftRight,
+  ReceiptText,
+  CalendarDays,
+  Percent,
+  FileBarChart,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/hooks/useStore";
@@ -30,11 +34,15 @@ import type { ChaveTexto } from "@/lib/linguagem";
 
 const menuItems: { href: string; label: string; icon: typeof Wallet; texto?: ChaveTexto }[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dia", label: "Dia", icon: CalendarDays },
   { href: "/geral", label: "Visão Geral", icon: Building2 },
   { href: "/agendamentos", label: "Agendamentos", icon: Calendar },
   { href: "/financeiro", label: "Financeiro", icon: DollarSign },
+  { href: "/comissoes", label: "Comissões", icon: Percent },
   { href: "/fluxo-caixa", label: "Fluxo de Caixa", icon: Wallet, texto: "menu_fluxo" },
+  { href: "/dre", label: "DRE", icon: FileBarChart, texto: "menu_dre" },
   { href: "/lancamentos", label: "Lançamentos", icon: ArrowLeftRight, texto: "menu_lanc" },
+  { href: "/contas", label: "Contas a Pagar", icon: ReceiptText, texto: "menu_contas" },
   { href: "/estoque", label: "Estoque", icon: Package },
   { href: "/resumo", label: "Resumo", icon: ClipboardList },
   { href: "/profissionais", label: "Profissionais", icon: Scissors },

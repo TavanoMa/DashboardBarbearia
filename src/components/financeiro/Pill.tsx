@@ -3,6 +3,7 @@ const TONS = {
   neg: "bg-danger/10 text-danger",
   warn: "bg-warning/15 text-warning",
   neu: "bg-foreground/5 text-muted",
+  info: "bg-accent/15 text-accent",
 } as const;
 
 export default function Pill({ tom, children }: { tom: keyof typeof TONS; children: React.ReactNode }) {

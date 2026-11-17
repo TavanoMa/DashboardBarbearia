@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Trash2, Wallet } from "lucide-react";
 import Header from "@/components/Header";
 import ModoBarbeiroToggle from "@/components/ModoBarbeiroToggle";
 import MesSelect from "@/components/financeiro/MesSelect";
@@ -14,6 +14,8 @@ import {
   IMPACTOS,
   META_MENSAL,
   RESPONSAVEIS,
+  TAXA_CARTAO,
+  taxaCartao,
   brl,
   ddmm,
   diaSemana,
@@ -57,8 +59,46 @@ export default function LancamentosPage() {
   const [sai, setSai] = useState({
     descricao: "", categoria: CATEGORIAS_SAIDA[0].nome, tipoSaida: CATEGORIAS_SAIDA[0].tipos[0],
     venc: hojeIso, pgto: hojeIso, valor: "", juros: "0,00", forma: "Pix", conta: "",
-    responsavel: "Empresa", parcela: "", impacto: "Essencial", geraReceita: "Não",
+    responsavel: "Empresa", parcela: "", impacto: "Essencial", geraReceita: "Não", quantidade: "1",
   });
+
+  // Atalho Pró-labore: pré-preenche a saída com o padrão de salário do dono.
+  // O cliente ainda precisa digitar valor, nome e conta de origem.
+  function atalhoProLabore() {
+    setTipo("saida");
+    setMsg(null);
+    setVerTodos(false);
+    setSai((s) => ({
+      ...s,
+      descricao: "Pró-labore — ",
+      categoria: "Despesa Fixa",
+      tipoSaida: "Pró-labore (Dono)",
+      responsavel: "Pessoal",
+      impacto: "Essencial",
+      geraReceita: "Não",
+      forma: "Pix",
+      quantidade: "1",
+    }));
+    // dá um tempinho pro DOM atualizar e foca no valor
+    setTimeout(() => {
+      const el = document.getElementById("s-val") as HTMLInputElement | null;
+      el?.focus();
+    }, 50);
+  }
+
+  const formaTemTaxaAuto = TAXA_CARTAO[ent.forma] !== undefined;
+
+  // Na entrada, cartão débito/crédito calcula a taxa sozinho a partir do valor cobrado.
+  function fmtTaxa(forma: string, valor: string): string {
+    const t = taxaCartao(forma, lerValor(valor));
+    return t === null ? "0,00" : t.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function mudarValorEnt(valor: string) {
+    setEnt((s) => ({ ...s, valor, taxa: TAXA_CARTAO[s.forma] !== undefined ? fmtTaxa(s.forma, valor) : s.taxa }));
+  }
+  function mudarFormaEnt(forma: string) {
+    setEnt((s) => ({ ...s, forma, conta: "", taxa: TAXA_CARTAO[forma] !== undefined ? fmtTaxa(forma, s.valor) : "0,00" }));
+  }
 
   const contaEnt = ent.conta || (ent.forma === "Cartões" ? "Maquininha" : ent.forma === "Dinheiro" ? "Dinheiro em espécie" : "Nubank PJ");
   const contaSai = sai.conta || (sai.forma === "Dinheiro" ? "Dinheiro em espécie" : "Nubank PJ");
@@ -115,13 +155,16 @@ export default function LancamentosPage() {
     } else {
       const valorConta = lerValor(sai.valor);
       if (valorConta <= 0) return setMsg({ ok: false, texto: t("f_erro_valor") });
-      adicionar({
-        id, tipo: "saida", dataVencimento: sai.venc, dataPagamento: sai.pgto, descricao: sai.descricao.trim() || sai.tipoSaida,
-        categoria: sai.categoria, tipoSaida: sai.tipoSaida, valorConta, juros: lerValor(sai.juros),
-        forma: sai.forma, conta: contaSai, responsavel: sai.responsavel, impacto: sai.impacto,
-        geraReceita: sai.geraReceita === "Sim", parcela: sai.parcela.trim(),
-      });
-      setSai((s) => ({ ...s, descricao: "", valor: "", juros: "0,00", parcela: "" }));
+      const qtd = Math.max(1, parseInt(sai.quantidade, 10) || 1);
+      for (let i = 0; i < qtd; i++) {
+        adicionar({
+          id: `${id}-${i}`, tipo: "saida", dataVencimento: sai.venc, dataPagamento: sai.pgto, descricao: sai.descricao.trim() || sai.tipoSaida,
+          categoria: sai.categoria, tipoSaida: sai.tipoSaida, valorConta, juros: lerValor(sai.juros),
+          forma: sai.forma, conta: contaSai, responsavel: sai.responsavel, impacto: sai.impacto,
+          geraReceita: sai.geraReceita === "Sim", parcela: sai.parcela.trim(),
+        });
+      }
+      setSai((s) => ({ ...s, descricao: "", valor: "", juros: "0,00", parcela: "", quantidade: "1" }));
     }
     setOffset(0);
     setMsg({ ok: true, texto: t("f_salvo") });
@@ -151,6 +194,8 @@ export default function LancamentosPage() {
   }
 
   const ehEntrada = tipo === "entrada";
+  const qtdSai = Math.max(1, parseInt(sai.quantidade, 10) || 1);
+  const pagoUnitSai = lerValor(sai.valor) + lerValor(sai.juros);
   const faltaMeta = Math.max(0, META_MENSAL - mes.fat);
   const pctMeta = Math.round((mes.fat / META_MENSAL) * 100);
   const total = ehEntrada ? mes.entradas.length : mes.saidas.length;
@@ -161,14 +206,21 @@ export default function LancamentosPage() {
       <main className="flex-1 p-4 sm:p-6 space-y-5 overflow-auto">
         <p className="text-xs text-muted">{t("exemplo_aviso")}</p>
 
-        <div className="flex gap-1.5 p-1 rounded-xl bg-card-bg border border-card-border w-full sm:w-fit" role="tablist">
-          <button type="button" role="tab" aria-selected={ehEntrada} onClick={() => trocarTipo("entrada")}
-            className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${ehEntrada ? "bg-success text-white" : "text-muted hover:text-foreground"}`}>
-            <ArrowUp size={15} /> {t("tab_entradas")}
-          </button>
-          <button type="button" role="tab" aria-selected={!ehEntrada} onClick={() => trocarTipo("saida")}
-            className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${!ehEntrada ? "bg-danger text-white" : "text-muted hover:text-foreground"}`}>
-            <ArrowDown size={15} /> {t("tab_saidas")}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1.5 p-1 rounded-xl bg-card-bg border border-card-border w-full sm:w-fit" role="tablist">
+            <button type="button" role="tab" aria-selected={ehEntrada} onClick={() => trocarTipo("entrada")}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${ehEntrada ? "bg-success text-white" : "text-muted hover:text-foreground"}`}>
+              <ArrowUp size={15} /> {t("tab_entradas")}
+            </button>
+            <button type="button" role="tab" aria-selected={!ehEntrada} onClick={() => trocarTipo("saida")}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${!ehEntrada ? "bg-danger text-white" : "text-muted hover:text-foreground"}`}>
+              <ArrowDown size={15} /> {t("tab_saidas")}
+            </button>
+          </div>
+          <button type="button" onClick={atalhoProLabore}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-accent/40 bg-accent/5 text-accent text-sm font-medium hover:bg-accent/10 transition-colors"
+            title="Lança um pró-labore do dono já com categoria, tipo, responsável e impacto pré-preenchidos.">
+            <Wallet size={15} /> Pró-labore do dono
           </button>
         </div>
 
@@ -223,16 +275,16 @@ export default function LancamentosPage() {
                 </Campo>
                 <Linha>
                   <Campo id="e-val" label={t("f_valor")}>
-                    <input id="e-val" inputMode="decimal" placeholder="0,00" value={ent.valor} onChange={(e) => setEnt({ ...ent, valor: e.target.value })} className={inputCls} />
+                    <input id="e-val" inputMode="decimal" placeholder="0,00" value={ent.valor} onChange={(e) => mudarValorEnt(e.target.value)} className={inputCls} />
                   </Campo>
-                  <Campo id="e-taxa" label={t("f_taxa")}>
-                    <input id="e-taxa" inputMode="decimal" value={ent.taxa} onChange={(e) => setEnt({ ...ent, taxa: e.target.value })} className={inputCls} />
+                  <Campo id="e-taxa" label={formaTemTaxaAuto ? `${t("f_taxa")} (auto)` : t("f_taxa")}>
+                    <input id="e-taxa" inputMode="decimal" value={ent.taxa} readOnly={formaTemTaxaAuto} onChange={(e) => setEnt({ ...ent, taxa: e.target.value })} className={`${inputCls} ${formaTemTaxaAuto ? "opacity-70 cursor-not-allowed" : ""}`} title={formaTemTaxaAuto ? "Taxa calculada automaticamente pela forma de pagamento" : undefined} />
                   </Campo>
                 </Linha>
                 <Calculo label={t("f_liquido")} formula={t("f_liq_formula")} valor={brl(lerValor(ent.valor) - lerValor(ent.taxa))} />
                 <Linha>
                   <Campo id="e-forma" label={t("f_forma")}>
-                    <Select id="e-forma" value={ent.forma} onChange={(v) => setEnt({ ...ent, forma: v, conta: "" })} opcoes={FORMAS_PAGAMENTO} op={op} />
+                    <Select id="e-forma" value={ent.forma} onChange={mudarFormaEnt} opcoes={FORMAS_PAGAMENTO} op={op} />
                   </Campo>
                   <Campo id="e-conta" label={t("f_conta")}>
                     <Select id="e-conta" value={contaEnt} onChange={(v) => setEnt({ ...ent, conta: v })} opcoes={contasNomes} op={(v) => v} />
@@ -270,7 +322,13 @@ export default function LancamentosPage() {
                     <input id="s-juros" inputMode="decimal" value={sai.juros} onChange={(e) => setSai({ ...sai, juros: e.target.value })} className={inputCls} />
                   </Campo>
                 </Linha>
-                <Calculo label={t("f_pago")} formula={t("f_pago_formula")} valor={brl(lerValor(sai.valor) + lerValor(sai.juros))} />
+                <Linha>
+                  <Campo id="s-qtd" label={t("f_qtd")}>
+                    <input id="s-qtd" type="number" min={1} step={1} value={sai.quantidade} onChange={(e) => setSai({ ...sai, quantidade: e.target.value })} className={inputCls} />
+                  </Campo>
+                  <div className="flex items-end pb-2.5 text-xs text-muted leading-tight">{t("f_qtd_nota")}</div>
+                </Linha>
+                <Calculo label={t("f_pago")} formula={qtdSai > 1 ? `${brl(pagoUnitSai)} × ${qtdSai}` : t("f_pago_formula")} valor={brl(pagoUnitSai * qtdSai)} />
                 <Linha>
                   <Campo id="s-forma" label={t("f_forma")}>
                     <Select id="s-forma" value={sai.forma} onChange={(v) => setSai({ ...sai, forma: v, conta: "" })} opcoes={FORMAS_PAGAMENTO} op={op} />
@@ -417,7 +475,7 @@ export default function LancamentosPage() {
 
 function Card({ label, valor, sub, tom }: { label: string; valor: string; sub: string; tom?: "pos" | "neg" }) {
   return (
-    <div className="bg-card-bg border border-card-border rounded-xl p-4 min-w-0">
+    <div className="bg-card-bg border border-card-border rounded-xl p-4 min-w-0 text-center">
       <p className="text-xs text-muted">{label}</p>
       <p className={`font-mono text-lg sm:text-xl tabular-nums mt-1 ${tom === "pos" ? "text-success" : tom === "neg" ? "text-danger" : ""}`}>{valor}</p>
       <p className="text-xs text-muted/80 mt-1">{sub}</p>

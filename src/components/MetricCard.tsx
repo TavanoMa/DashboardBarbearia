@@ -27,29 +27,23 @@ export default function MetricCard({
   color = "accent",
 }: MetricCardProps) {
   return (
-    <div className="bg-card-bg border border-card-border rounded-xl p-5 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-muted text-sm">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
-          {subtitle && (
-            <p className="text-muted text-xs mt-1">{subtitle}</p>
-          )}
-          {trend && (
-            <p
-              className={`text-xs mt-2 font-medium ${
-                trend.value >= 0 ? "text-success" : "text-danger"
-              }`}
-            >
-              {trend.value >= 0 ? "+" : ""}
-              {trend.value}% {trend.label}
-            </p>
-          )}
-        </div>
-        <div className={`p-2.5 rounded-lg ${colorMap[color]}`}>
-          <Icon size={22} />
-        </div>
+    <div className="bg-card-bg border border-card-border rounded-xl p-5 hover:shadow-md transition-shadow flex flex-col items-center text-center">
+      <div className={`p-2.5 rounded-lg mb-3 ${colorMap[color]}`}>
+        <Icon size={22} />
       </div>
+      <p className="text-muted text-sm">{title}</p>
+      <p className="text-2xl font-bold mt-1">{value}</p>
+      {subtitle && <p className="text-muted text-xs mt-1">{subtitle}</p>}
+      {trend && (
+        <p
+          className={`text-xs mt-2 font-medium ${
+            trend.value >= 0 ? "text-success" : "text-danger"
+          }`}
+        >
+          {trend.value >= 0 ? "+" : ""}
+          {trend.value}% {trend.label}
+        </p>
+      )}
     </div>
   );
 }

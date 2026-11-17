@@ -293,7 +293,7 @@ export default function FluxoCaixaPage() {
 
 function Card({ label, valor, sub, tom }: { label: string; valor: string; sub: string; tom?: "pos" | "neg" }) {
   return (
-    <div className="bg-card-bg border border-card-border rounded-xl p-4 min-w-0">
+    <div className="bg-card-bg border border-card-border rounded-xl p-4 min-w-0 text-center">
       <p className="text-xs text-muted">{label}</p>
       <p className={`font-mono text-lg sm:text-xl tabular-nums mt-1 ${tom === "pos" ? "text-success" : tom === "neg" ? "text-danger" : ""}`}>{valor}</p>
       <p className="text-xs text-muted/80 mt-1">{sub}</p>

@@ -7,7 +7,20 @@ export const CAIXA_SEGURO = CAIXA_MINIMO * (1 + MARGEM_SEGURANCA);
 export const META_MENSAL = 60000;
 
 export const CATEGORIAS_ENTRADA = ["Serviço", "Produtos", "Outros"] as const;
-export const FORMAS_PAGAMENTO = ["Dinheiro", "Pix", "Cartões", "Boleto", "Outros"] as const;
+export const FORMAS_PAGAMENTO = ["Dinheiro", "Pix", "Cartão Débito", "Cartão Crédito", "Boleto", "Outros"] as const;
+
+// Taxa da maquininha por forma de pagamento (% sobre o valor cobrado).
+export const TAXA_CARTAO: Record<string, number> = {
+  "Cartão Débito": 0.009, // 0,90%
+  "Cartão Crédito": 0.029, // 2,90%
+};
+
+// Retorna a taxa em R$ quando a forma tem taxa automática, ou null quando não tem.
+export function taxaCartao(forma: string, valorCobranca: number): number | null {
+  const rate = TAXA_CARTAO[forma];
+  if (rate === undefined) return null;
+  return Math.round(valorCobranca * rate * 100) / 100;
+}
 export const CANAIS = [
   "Recorrência",
   "Indicação",
@@ -87,6 +100,17 @@ export interface ContaPrevista {
   descricao: string;
   valor: number;
   pago: boolean;
+  usuario?: boolean; // criada pelo usuário (vs. exemplo)
+}
+
+export type StatusConta = "A vencer" | "Vence hoje" | "Vencido" | "Pago";
+
+// CONTAS A PAGAR/RECEBER › coluna Status: PAGO / VENCE HOJE / VENCIDO / A VENCER.
+export function statusConta(c: ContaPrevista, hoje: string): StatusConta {
+  if (c.pago) return "Pago";
+  if (c.vencimento === hoje) return "Vence hoje";
+  if (c.vencimento < hoje) return "Vencido";
+  return "A vencer";
 }
 
 export const valorLiquido = (e: Entrada) => e.valorCobranca - e.taxa;
@@ -275,4 +299,146 @@ export function somarPor<T>(itens: T[], chave: (i: T) => string, valor: (i: T) =
   const mapa = new Map<string, number>();
   for (const i of itens) mapa.set(chave(i), (mapa.get(chave(i)) || 0) + valor(i));
   return [...mapa.entries()].map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
+}
+
+// ---------------------------------------------------------------------------
+// DRE — Demonstração do Resultado
+// ---------------------------------------------------------------------------
+
+/**
+ * Onde cada categoria entra no DRE. Fora do DRE propriamente dito (CAPEX,
+ * Retirada, Depreciação, Provisões) são tratadas à parte, como "abaixo da
+ * linha", e não entram no Resultado Líquido do período.
+ */
+export const DRE_BUCKET: Record<string, "custo" | "despesa_fixa" | "despesa_variavel" | "despesa_admin" | "despesa_comercial" | "despesa_financeira" | "despesa_tributaria" | "capex" | "retirada" | "depreciacao" | "provisoes"> = {
+  "Custo Operacional": "custo",
+  "Despesa Fixa": "despesa_fixa",
+  "Despesa Variável": "despesa_variavel",
+  "Despesa Administrativa": "despesa_admin",
+  "Despesa Comercial": "despesa_comercial",
+  "Despesa Financeira": "despesa_financeira",
+  "Despesa Tributária": "despesa_tributaria",
+  "Investimento (CAPEX)": "capex",
+  "Retirada": "retirada",
+  "Depreciação": "depreciacao",
+  "Provisões": "provisoes",
+};
+
+export interface LinhaDRE {
+  rotulo: string;
+  valor: number; // positivo para entradas/resultados, negativo para saídas
+  /** Despesas e deduções mostradas como "(−)"; totais são "(=)"; receita bruta é "(+)". */
+  sinal: "mais" | "menos" | "igual";
+  /** Linhas destacadas são os totais (Receita Líquida, Lucro Bruto, EBITDA, Resultado Líquido). */
+  destaque?: boolean;
+  /** Linha é uma categoria detalhada (mostrar % e abrir drilldown). */
+  categoria?: string;
+  /** Quebra em tipos específicos (ex.: Aluguel, Internet). */
+  itens?: { nome: string; total: number }[];
+}
+
+export interface Dre {
+  receitaBruta: number;
+  taxas: number;
+  receitaLiquida: number;
+  custos: number;
+  lucroBruto: number;
+  despesasOperacionais: number; // fixa + variavel + admin + comercial
+  ebitda: number;
+  despesasFinanceiras: number;
+  despesasTributarias: number;
+  resultadoLiquido: number;
+  // Abaixo da linha — não reduzem o Resultado, mas drenam caixa
+  capex: number;
+  retiradas: number;
+  depreciacao: number;
+  provisoes: number;
+  // Margens em % sobre a Receita Líquida (0 quando receita é 0).
+  margemBruta: number;
+  margemOperacional: number;
+  margemLiquida: number;
+  linhas: LinhaDRE[];
+}
+
+type Bucket = (typeof DRE_BUCKET)[string];
+
+/**
+ * DRE do período (inclusivo): usa entradas pelo seu valor COBRADO (bruto) e
+ * desconta as taxas de cartão no bloco "Deduções da receita". Saídas entram
+ * pelo valor pago (valor da conta + juros).
+ */
+export function calcDRE(
+  lancamentos: Lancamento[],
+  inicioIso: string,
+  fimIso: string
+): Dre {
+  const entradas = lancamentos.filter(
+    (l): l is Entrada => l.tipo === "entrada" && l.data >= inicioIso && l.data <= fimIso
+  );
+  const saidas = lancamentos.filter(
+    (l): l is Saida => l.tipo === "saida" && l.dataPagamento >= inicioIso && l.dataPagamento <= fimIso
+  );
+
+  const receitaBruta = entradas.reduce((s, e) => s + e.valorCobranca, 0);
+  const taxas = entradas.reduce((s, e) => s + e.taxa, 0);
+  const receitaLiquida = receitaBruta - taxas;
+
+  const soma = (bucket: Bucket) =>
+    saidas.filter((s) => DRE_BUCKET[s.categoria] === bucket).reduce((acc, s) => acc + valorPago(s), 0);
+  const itensPor = (bucket: Bucket) =>
+    somarPor(
+      saidas.filter((s) => DRE_BUCKET[s.categoria] === bucket),
+      (s) => s.tipoSaida,
+      valorPago
+    ).filter((i) => i.total > 0);
+
+  const custos = soma("custo");
+  const despesaFixa = soma("despesa_fixa");
+  const despesaVariavel = soma("despesa_variavel");
+  const despesaAdmin = soma("despesa_admin");
+  const despesaComercial = soma("despesa_comercial");
+  const despesasFinanceiras = soma("despesa_financeira");
+  const despesasTributarias = soma("despesa_tributaria");
+  const capex = soma("capex");
+  const retiradas = soma("retirada");
+  const depreciacao = soma("depreciacao");
+  const provisoes = soma("provisoes");
+
+  const despesasOperacionais = despesaFixa + despesaVariavel + despesaAdmin + despesaComercial;
+  const lucroBruto = receitaLiquida - custos;
+  const ebitda = lucroBruto - despesasOperacionais;
+  const resultadoLiquido = ebitda - despesasFinanceiras - despesasTributarias;
+
+  // Entradas por categoria para detalhar a Receita Bruta
+  const itensReceita = somarPor(entradas, (e) => e.categoria, (e) => e.valorCobranca).filter(
+    (i) => i.total > 0
+  );
+
+  const linhas: LinhaDRE[] = [
+    { rotulo: "Receita Bruta", valor: receitaBruta, sinal: "mais", destaque: true, categoria: "receita", itens: itensReceita },
+    { rotulo: "(−) Deduções da receita (taxas de cartão)", valor: -taxas, sinal: "menos" },
+    { rotulo: "(=) Receita Líquida", valor: receitaLiquida, sinal: "igual", destaque: true },
+    { rotulo: "(−) Custos Operacionais", valor: -custos, sinal: "menos", categoria: "Custo Operacional", itens: itensPor("custo") },
+    { rotulo: "(=) Lucro Bruto", valor: lucroBruto, sinal: "igual", destaque: true },
+    { rotulo: "(−) Despesas Fixas", valor: -despesaFixa, sinal: "menos", categoria: "Despesa Fixa", itens: itensPor("despesa_fixa") },
+    { rotulo: "(−) Despesas Variáveis", valor: -despesaVariavel, sinal: "menos", categoria: "Despesa Variável", itens: itensPor("despesa_variavel") },
+    { rotulo: "(−) Despesas Administrativas", valor: -despesaAdmin, sinal: "menos", categoria: "Despesa Administrativa", itens: itensPor("despesa_admin") },
+    { rotulo: "(−) Despesas Comerciais", valor: -despesaComercial, sinal: "menos", categoria: "Despesa Comercial", itens: itensPor("despesa_comercial") },
+    { rotulo: "(=) Resultado Operacional (EBITDA)", valor: ebitda, sinal: "igual", destaque: true },
+    { rotulo: "(−) Despesas Financeiras", valor: -despesasFinanceiras, sinal: "menos", categoria: "Despesa Financeira", itens: itensPor("despesa_financeira") },
+    { rotulo: "(−) Despesas Tributárias", valor: -despesasTributarias, sinal: "menos", categoria: "Despesa Tributária", itens: itensPor("despesa_tributaria") },
+    { rotulo: "(=) Resultado Líquido", valor: resultadoLiquido, sinal: "igual", destaque: true },
+  ];
+
+  const margem = (n: number) => (receitaLiquida > 0 ? (n / receitaLiquida) * 100 : 0);
+
+  return {
+    receitaBruta, taxas, receitaLiquida, custos, lucroBruto,
+    despesasOperacionais, ebitda, despesasFinanceiras, despesasTributarias, resultadoLiquido,
+    capex, retiradas, depreciacao, provisoes,
+    margemBruta: margem(lucroBruto),
+    margemOperacional: margem(ebitda),
+    margemLiquida: margem(resultadoLiquido),
+    linhas,
+  };
 }
