@@ -60,14 +60,16 @@ jobs:
         if: steps.check.outputs.need == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - name: Instalar dependências
         if: steps.check.outputs.need == 'true'
         run: |
           npm ci
-          npm install --no-save playwright@1
+          # playwright-extra + plugin stealth escondem marcas de automação do navegador;
+          # ajudam a passar no reCAPTCHA v3 do AppBarber a partir de IPs de datacenter.
+          npm install --no-save playwright@1 playwright-extra@4 puppeteer-extra-plugin-stealth@2
           npx playwright install --with-deps chromium
 
       - name: Consertar sessões

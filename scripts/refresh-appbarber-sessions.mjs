@@ -128,7 +128,7 @@ async function authInPage(page, { email, password, establishmentCode }) {
   return page.evaluate(
     async ({ siteKey, email, password, establishmentCode }) => {
       const token = await new Promise((resolve, reject) => {
-        // @ts-ignore — grecaptcha é carregado pela página do AppBarber
+        // grecaptcha é carregado pela página do AppBarber
         const g = window.grecaptcha;
         if (!g) return reject(new Error("reCAPTCHA não carregou na página"));
         g.ready(() => g.execute(siteKey, { action: "submit" }).then(resolve, reject));
@@ -171,10 +171,42 @@ function pickEstablishment(establishments, store, soleStore) {
   return null;
 }
 
+/** Delay aleatório — o reCAPTCHA v3 pontua baixo quando tudo acontece em ms certinhos. */
+function jitter(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+/** Humaniza a página: scroll, movimento de mouse em curvas, delays variáveis. */
+async function warmUpPage(page) {
+  // scroll suave
+  for (let y of [120, 260, 480, 320, 180, 0]) {
+    await page.evaluate((top) => window.scrollTo({ top, behavior: "smooth" }), y);
+    await page.waitForTimeout(jitter(250, 650));
+  }
+  // movimento de mouse em vários pontos (simula procurando onde clicar)
+  const pontos = [
+    [220, 180], [410, 260], [640, 340], [540, 450], [320, 520], [720, 300],
+  ];
+  for (const [x, y] of pontos) {
+    await page.mouse.move(x + jitter(-10, 10), y + jitter(-10, 10), { steps: Math.floor(jitter(10, 25)) });
+    await page.waitForTimeout(jitter(120, 380));
+  }
+  // foco de verdade nos campos de login — reCAPTCHA v3 observa interação em inputs
+  const campos = ["input[name='login']", "input[type='email']", "input[name='email']",
+                  "input[type='password']", "input[name='senha']"];
+  for (const sel of campos) {
+    const el = await page.$(sel);
+    if (el) {
+      await el.hover().catch(() => {});
+      await page.waitForTimeout(jitter(200, 500));
+    }
+  }
+}
+
 /**
  * Faz o login de UMA loja num contexto de navegador novo (cookies separados),
  * para cada loja ter a própria sessão. Devolve o PHPSESSID ou lança.
- * @param {import('playwright').Browser} browser
+ * @param {import('playwright-extra').PlaywrightExtra | import('playwright').Browser} browser
  */
 async function loginStore(browser, account, store) {
   const context = await browser.newContext({
@@ -182,16 +214,29 @@ async function loginStore(browser, account, store) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     locale: "pt-BR",
     timezoneId: "America/Sao_Paulo",
-    viewport: { width: 1366, height: 768 },
+    viewport: { width: 1366 + Math.floor(jitter(-20, 20)), height: 768 + Math.floor(jitter(-20, 20)) },
+    extraHTTPHeaders: {
+      "accept-language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    },
+    // Mais um empurrão anti-detecção: tela cheia, geolocalização BR
+    geolocation: { longitude: -46.633, latitude: -23.55 },
+    permissions: ["geolocation"],
   });
   try {
     const page = await context.newPage();
+    // Esconde flags clássicas do webdriver antes de qualquer script do site rodar.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      Object.defineProperty(navigator, "languages", { get: () => ["pt-BR", "pt", "en-US", "en"] });
+      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+      // Chrome real tem window.chrome
+      if (!window.chrome) window.chrome = { runtime: {} };
+    });
     await page.goto(`${BASE_URL}/login.php`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForFunction(() => !!window["grecaptcha"], undefined, { timeout: 30000 });
-    // O reCAPTCHA v3 pontua o comportamento na página; um pouco de atividade ajuda.
-    await page.mouse.move(300, 300, { steps: 12 });
-    await page.waitForTimeout(2500);
-    await page.mouse.move(640, 420, { steps: 18 });
+    // Humaniza antes de pedir o token — o reCAPTCHA v3 observa esse comportamento
+    await warmUpPage(page);
+    await page.waitForTimeout(jitter(1500, 3500));
 
     let data = await authInPage(page, account);
     if (!data) throw new Error("o AppBarber não devolveu JSON no login");
@@ -270,11 +315,30 @@ async function main() {
     return;
   }
 
-  // 2. Login só nas que precisam
-  const { chromium } = await import("playwright");
+  // 2. Login só nas que precisam.
+  // Usa playwright-extra + plugin stealth quando disponível (passa melhor no reCAPTCHA v3).
+  // Se não estiver instalado, cai no playwright normal.
+  let chromium;
+  try {
+    const extra = await import("playwright-extra");
+    const stealth = (await import("puppeteer-extra-plugin-stealth")).default;
+    chromium = extra.chromium;
+    chromium.use(stealth());
+    log("stealth ativo");
+  } catch (err) {
+    log("stealth indisponível, usando playwright puro:", err instanceof Error ? err.message : err);
+    chromium = (await import("playwright")).chromium;
+  }
+
   const browser = await chromium.launch({
     headless: true,
-    args: ["--disable-blink-features=AutomationControlled"],
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--disable-dev-shm-usage",
+      "--no-sandbox",
+      "--window-size=1366,768",
+    ],
   });
 
   const healed = [];

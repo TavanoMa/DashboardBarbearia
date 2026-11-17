@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Zap,
 } from "lucide-react";
 import Header from "@/components/Header";
 
@@ -62,6 +63,8 @@ export default function ConfiguracoesPage() {
   const [storeStatuses, setStoreStatuses] = useState<StoreStatus[]>([]);
   const [statusLoading, setStatusLoading] = useState(true);
   const [hasCredentials, setHasCredentials] = useState(false);
+  // Reconexão por loja: id -> "idle" | "reconnecting" | "ok" | mensagem de erro
+  const [reconnectMsg, setReconnectMsg] = useState<Record<string, string>>({});
 
   const [showManual, setShowManual] = useState(false);
   const [manualStores, setManualStores] = useState<
@@ -255,6 +258,38 @@ export default function ConfiguracoesPage() {
     });
   };
 
+  // --- Reconectar uma loja usando as credenciais já salvas no KV ---
+  // Gera reCAPTCHA no navegador do próprio gerente (IP residencial, nota alta no v3)
+  // e manda pro servidor refazer o login daquela loja, sem precisar colar cookie.
+  const handleReconnect = async (storeId: string) => {
+    setReconnectMsg((m) => ({ ...m, [storeId]: "reconnecting" }));
+    try {
+      const token = await getRecaptchaToken();
+      const res = await fetch("/api/auth/reconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, recaptchaToken: token }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReconnectMsg((m) => ({ ...m, [storeId]: data.error || "Falhou" }));
+        return;
+      }
+      setReconnectMsg((m) => ({ ...m, [storeId]: "ok" }));
+      await fetchStatus();
+      // limpa a mensagem depois de uns segundos
+      setTimeout(
+        () => setReconnectMsg((m) => ({ ...m, [storeId]: "idle" })),
+        4000
+      );
+    } catch (err) {
+      setReconnectMsg((m) => ({
+        ...m,
+        [storeId]: err instanceof Error ? err.message : "Erro ao reconectar",
+      }));
+    }
+  };
+
   // --- Keepalive test ---
   const handleKeepalive = async () => {
     setStatusLoading(true);
@@ -318,9 +353,24 @@ export default function ConfiguracoesPage() {
                       </p>
                       {store.status === "alive" && (
                         <p className="text-xs text-warning mt-0.5">
-                          Conectado, mas sem dados — faça o login novo abaixo para reconectar a loja.
+                          Conectado, mas sem dados — use o botão{" "}
+                          <strong>Reconectar</strong> aqui do lado.
                         </p>
                       )}
+                      {reconnectMsg[store.id] === "ok" && (
+                        <p className="text-xs text-success mt-0.5 inline-flex items-center gap-1">
+                          <CheckCircle size={11} /> Sessão reconectada.
+                        </p>
+                      )}
+                      {reconnectMsg[store.id] &&
+                        reconnectMsg[store.id] !== "ok" &&
+                        reconnectMsg[store.id] !== "reconnecting" &&
+                        reconnectMsg[store.id] !== "idle" && (
+                          <p className="text-xs text-danger mt-0.5 inline-flex items-start gap-1">
+                            <XCircle size={11} className="mt-0.5 shrink-0" />
+                            <span>{reconnectMsg[store.id]}</span>
+                          </p>
+                        )}
                     </div>
                   </div>
                   {(() => {
@@ -336,17 +386,41 @@ export default function ConfiguracoesPage() {
                           ? { cls: "bg-warning/15 text-warning", Icon: AlertCircle, label: "Sem dados" }
                           : { cls: "bg-danger/10 text-danger", Icon: WifiOff, label: "Offline" };
                     const { Icon } = visual;
+                    const precisaReconectar = estado === "alive" || estado === "dead";
+                    const reconectando = reconnectMsg[store.id] === "reconnecting";
                     return (
-                      <div
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${visual.cls}`}
-                        title={
-                          estado === "alive"
-                            ? "O crachá responde mas veio vazio — faça o login novo para regrudar a loja."
-                            : undefined
-                        }
-                      >
-                        <Icon size={12} />
-                        {visual.label}
+                      <div className="flex items-center gap-2">
+                        {precisaReconectar && (
+                          <button
+                            type="button"
+                            onClick={() => handleReconnect(store.id)}
+                            disabled={reconectando || !hasCredentials}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-accent text-sidebar-bg hover:bg-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={
+                              !hasCredentials
+                                ? "Faça o login completo abaixo pelo menos uma vez — depois o botão fica ativo."
+                                : "Gera um reCAPTCHA no seu navegador e reconecta esta loja usando o login salvo. Sem precisar colar cookie."
+                            }
+                          >
+                            {reconectando ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Zap size={12} />
+                            )}
+                            {reconectando ? "Reconectando…" : "Reconectar"}
+                          </button>
+                        )}
+                        <div
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${visual.cls}`}
+                          title={
+                            estado === "alive"
+                              ? "O crachá responde mas veio vazio — clique em Reconectar."
+                              : undefined
+                          }
+                        >
+                          <Icon size={12} />
+                          {visual.label}
+                        </div>
                       </div>
                     );
                   })()}
