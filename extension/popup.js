@@ -5,11 +5,11 @@ const DASHBOARD_URL_PADRAO = "https://dashboard-two-teal-35.vercel.app";
 
 async function load() {
   const cfg = await chrome.storage.local.get(KEYS);
-  // URL fica pré-preenchida (read-only no HTML). Se ainda não tiver nada salvo,
-  // já grava a padrão pra o botão "Sincronizar" funcionar na primeira vez.
-  const url = cfg.dashboardUrl || DASHBOARD_URL_PADRAO;
+  // URL é sempre a padrão — apaga qualquer coisa ruim que tenha ficado salva
+  // (ex.: um "dashboard-two-teal-35.vercel.app" sem https de um teste antigo).
+  const url = DASHBOARD_URL_PADRAO;
   document.getElementById("dashboardUrl").value = url;
-  if (!cfg.dashboardUrl) {
+  if (cfg.dashboardUrl !== url) {
     await chrome.storage.local.set({ dashboardUrl: url });
   }
   document.getElementById("syncToken").value = cfg.syncToken || "";
@@ -48,8 +48,8 @@ async function popularLojas(dashboardUrl, selectedId) {
 }
 
 async function save() {
-  const dashboardUrl =
-    document.getElementById("dashboardUrl").value.trim() || DASHBOARD_URL_PADRAO;
+  // URL vem sempre da constante — não confia no input (é read-only, mas por garantia)
+  const dashboardUrl = DASHBOARD_URL_PADRAO;
   const syncToken = document.getElementById("syncToken").value.trim();
   const storeId = document.getElementById("storeId").value;
   const autoSync = document.getElementById("autoSync").checked;
