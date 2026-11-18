@@ -1,13 +1,20 @@
 // Popup — carrega config, lista lojas via /api/auth/status, salva e dispara sync.
 
 const KEYS = ["dashboardUrl", "syncToken", "storeId", "autoSync", "lastStatus", "lastStatusAt"];
+const DASHBOARD_URL_PADRAO = "https://dashboard-two-teal-35.vercel.app";
 
 async function load() {
   const cfg = await chrome.storage.local.get(KEYS);
-  document.getElementById("dashboardUrl").value = cfg.dashboardUrl || "";
+  // URL fica pré-preenchida (read-only no HTML). Se ainda não tiver nada salvo,
+  // já grava a padrão pra o botão "Sincronizar" funcionar na primeira vez.
+  const url = cfg.dashboardUrl || DASHBOARD_URL_PADRAO;
+  document.getElementById("dashboardUrl").value = url;
+  if (!cfg.dashboardUrl) {
+    await chrome.storage.local.set({ dashboardUrl: url });
+  }
   document.getElementById("syncToken").value = cfg.syncToken || "";
   document.getElementById("autoSync").checked = cfg.autoSync !== false;
-  await popularLojas(cfg.dashboardUrl, cfg.storeId);
+  await popularLojas(url, cfg.storeId);
   renderStatus(cfg.lastStatus, cfg.lastStatusAt);
 }
 
@@ -41,7 +48,8 @@ async function popularLojas(dashboardUrl, selectedId) {
 }
 
 async function save() {
-  const dashboardUrl = document.getElementById("dashboardUrl").value.trim();
+  const dashboardUrl =
+    document.getElementById("dashboardUrl").value.trim() || DASHBOARD_URL_PADRAO;
   const syncToken = document.getElementById("syncToken").value.trim();
   const storeId = document.getElementById("storeId").value;
   const autoSync = document.getElementById("autoSync").checked;
