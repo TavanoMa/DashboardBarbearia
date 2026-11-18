@@ -102,9 +102,16 @@ async function syncNow(trigger) {
       });
       return { ok: false, reason: data.error || `HTTP ${res.status}` };
     }
+    if (data.status === "alive" || data.warning) {
+      await setStatus({
+        type: "warn",
+        message: `Cookie enviado, mas o AppBarber não está com loja selecionada. Abra sistema.appbarber.com.br, entre na loja "${data.storeName || storeId}" e clique em Sincronizar de novo.`,
+      });
+      return { ok: true, storeName: data.storeName, warning: true };
+    }
     await setStatus({
       type: "ok",
-      message: `Loja "${data.storeName || storeId}" atualizada`,
+      message: `Loja "${data.storeName || storeId}" atualizada com dados`,
     });
     return { ok: true, storeName: data.storeName };
   } catch (err) {
