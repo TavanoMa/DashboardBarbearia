@@ -16,6 +16,8 @@ import {
   ChevronUp,
   Loader2,
   Zap,
+  Puzzle,
+  Copy,
 } from "lucide-react";
 import Header from "@/components/Header";
 
@@ -102,6 +104,22 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  // --- Extensão: busca token pra mostrar pro cliente colar no popup ---
+  const [extToken, setExtToken] = useState<string | null>(null);
+  const [extConfigured, setExtConfigured] = useState<boolean | null>(null);
+  const [extCopied, setExtCopied] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/extension-token")
+      .then((r) => r.json())
+      .then((d) => {
+        setExtConfigured(!!d.configured);
+        if (d.token) setExtToken(d.token);
+      })
+      .catch(() => setExtConfigured(false));
+  }, []);
+  const dashboardOrigin =
+    typeof window !== "undefined" ? window.location.origin : "";
 
   // --- Get reCAPTCHA token ---
   const getRecaptchaToken = (): Promise<string> => {
@@ -428,6 +446,78 @@ export default function ConfiguracoesPage() {
               ))}
             </div>
           )}
+        </section>
+
+        {/* --- Extensão de navegador --- */}
+        <section className="bg-card-bg border border-card-border rounded-xl p-5 sm:p-6">
+          <h3 className="font-semibold flex items-center gap-2 mb-2">
+            <Puzzle size={18} className="text-accent" />
+            Extensão do Chrome (auto-sync)
+          </h3>
+          <p className="text-sm text-muted mb-4">
+            Pequena extensão que, toda vez que o dono entra no AppBarber no Chrome dele,
+            pega o cookie da sessão e manda pro dashboard sozinha. Nunca mais precisa colar cookie.
+          </p>
+
+          {extConfigured === false && (
+            <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning mb-4">
+              <strong>Servidor sem token da extensão.</strong> Adicione a variável de ambiente{" "}
+              <code className="px-1 py-0.5 bg-black/20 rounded">EXTENSION_SYNC_TOKEN</code> no Vercel
+              com um valor aleatório (ex.: 32 caracteres) e refaça o deploy.
+            </div>
+          )}
+
+          <div className="space-y-3 text-sm">
+            <div className="p-3 rounded-lg bg-background border border-card-border">
+              <p className="text-xs text-muted mb-1">URL do Dashboard</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs break-all">{dashboardOrigin}</code>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(dashboardOrigin)}
+                  className="p-1.5 rounded hover:bg-accent/10 text-muted hover:text-accent"
+                  title="Copiar"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </div>
+
+            {extToken && (
+              <div className="p-3 rounded-lg bg-background border border-card-border">
+                <p className="text-xs text-muted mb-1">Token da extensão</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs break-all">{extToken}</code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(extToken);
+                      setExtCopied(true);
+                      setTimeout(() => setExtCopied(false), 1500);
+                    }}
+                    className="p-1.5 rounded hover:bg-accent/10 text-muted hover:text-accent"
+                    title="Copiar"
+                  >
+                    {extCopied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <details className="p-3 rounded-lg bg-background border border-card-border">
+              <summary className="cursor-pointer text-sm font-medium text-accent">
+                Como instalar (1 minuto)
+              </summary>
+              <ol className="mt-3 ml-5 space-y-2 text-xs list-decimal text-muted">
+                <li>Pede pro dono baixar a pasta <code>extension/</code> deste projeto (ou descompactar o .zip que você enviar)</li>
+                <li>No Chrome, abre <code>chrome://extensions</code></li>
+                <li>Liga <strong>&quot;Modo do desenvolvedor&quot;</strong> no canto superior direito</li>
+                <li>Clica em <strong>&quot;Carregar sem compactação&quot;</strong> e aponta pra pasta</li>
+                <li>Clica no ícone da extensão, cola a URL e o token acima, escolhe a loja e salva</li>
+                <li>Pede pro dono entrar no AppBarber como ele sempre faz — o badge <strong>OK verde</strong> aparece no ícone em ~3s</li>
+              </ol>
+            </details>
+          </div>
         </section>
 
         {/* --- Login with AppBarber --- */}

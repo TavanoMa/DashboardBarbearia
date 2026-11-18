@@ -2,7 +2,6 @@
 export const TEXTOS = {
   menu_fluxo: ["Fluxo de Caixa", "Dinheiro no Caixa"],
   menu_lanc: ["Lançamentos", "Registrar Dinheiro"],
-  menu_contas: ["Contas a Pagar", "Contas a Pagar"],
   menu_dre: ["DRE", "Resultado do mês"],
 
   // DRE

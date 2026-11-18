@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Dashboard Cacique's — Sync AppBarber",
+  "description": "Mantém o dashboard financeiro conectado ao AppBarber sem precisar colar cookie.",
+  "version": "1.0.0",
+  "permissions": ["cookies", "storage", "alarms", "notifications"],
+  "host_permissions": [
+    "https://sistema.appbarber.com.br/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}
