@@ -25,6 +25,7 @@ import {
   CalendarDays,
   Percent,
   FileBarChart,
+  LogOut,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/hooks/useStore";
@@ -225,6 +226,18 @@ export default function Sidebar() {
             );
           })}
         </nav>
+
+        <button
+          onClick={async () => {
+            await fetch("/api/gate/logout", { method: "POST" });
+            window.location.href = "/entrar";
+          }}
+          className="flex items-center gap-3 px-4 py-2.5 mx-2 mb-2 rounded-lg text-sidebar-text/70 hover:bg-white/5 hover:text-white transition-colors"
+          title={collapsed ? "Sair" : undefined}
+        >
+          <LogOut size={18} className="shrink-0" />
+          {!collapsed && <span className="text-sm">Sair</span>}
+        </button>
 
         <button
           onClick={() => setCollapsed(!collapsed)}
